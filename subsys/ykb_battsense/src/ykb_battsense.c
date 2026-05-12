@@ -98,6 +98,8 @@ static void battsense_thread_handler(void *a, void *b, void *c) {
             }
         } else if (old_state.percentage != state.percentage ||
                    old_state.charge_status != state.charge_status) {
+            LOG_INF("State changed: Pecentage: %d, Status: %d",
+                    state.percentage, state.charge_status);
             STRUCT_SECTION_FOREACH(ykb_battsense_cb, cb) {
                 if (cb->on_state_changed) {
                     cb->on_state_changed(state);
