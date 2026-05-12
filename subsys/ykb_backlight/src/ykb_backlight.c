@@ -187,7 +187,8 @@ static void on_settings_update(const kb_settings_t *settings) {
 
     uint16_t cur_idx = settings->backlight.active_script_index;
     if (cur_idx >= settings->backlight.script_amount) {
-        LOG_ERR("Active script index is out of bounds!");
+        LOG_ERR("Active script index is out of bounds (%d >= %d)!", cur_idx,
+                settings->backlight.script_amount);
         goto defer;
     }
     uint32_t start_offset = settings->backlight.offsets[cur_idx];
