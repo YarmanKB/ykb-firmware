@@ -1,3 +1,4 @@
+#include <drivers/splitlink_bt.h>
 #include <subsys/bt_connect.h>
 
 #include "hid_devices/hid_devices.h"
@@ -23,24 +24,24 @@ LOG_MODULE_REGISTER(bt_connect, CONFIG_BT_CONNECT_LOG_LEVEL);
 #define BT_CONNECT_KBD_INPUT_REPORT_SIZE sizeof(hid_kb_report_t)
 #define BT_CONNECT_KBD_OUTPUT_REPORT_SIZE 1U
 #define BT_CONNECT_MOUSE_INPUT_REPORT_SIZE sizeof(hid_mouse_report_t)
-#define BT_CONNECT_VENDOR_INPUT_REPORT_SIZE                                  \
+#define BT_CONNECT_VENDOR_INPUT_REPORT_SIZE                                    \
     CONFIG_BT_CONNECT_MAX_VENDOR_IN_REPORT_SIZE
-#define BT_CONNECT_VENDOR_OUTPUT_REPORT_SIZE                                 \
+#define BT_CONNECT_VENDOR_OUTPUT_REPORT_SIZE                                   \
     CONFIG_BT_CONNECT_MAX_VENDOR_OUT_REPORT_SIZE
-#define BT_CONNECT_VENDOR_FEATURE_REPORT_SIZE                                \
+#define BT_CONNECT_VENDOR_FEATURE_REPORT_SIZE                                  \
     CONFIG_BT_CONNECT_MAX_VENDOR_IN_REPORT_SIZE
 
-BT_HIDS_DEF(
-    hids_obj,
+BT_HIDS_DEF(hids_obj,
 #if CONFIG_BT_CONNECT_KBD
-    BT_CONNECT_KBD_INPUT_REPORT_SIZE, BT_CONNECT_KBD_OUTPUT_REPORT_SIZE,
+            BT_CONNECT_KBD_INPUT_REPORT_SIZE, BT_CONNECT_KBD_OUTPUT_REPORT_SIZE,
 #endif
 #if CONFIG_BT_CONNECT_MOUSE
-    BT_CONNECT_MOUSE_INPUT_REPORT_SIZE,
+            BT_CONNECT_MOUSE_INPUT_REPORT_SIZE,
 #endif
 #if CONFIG_BT_CONNECT_VENDOR
-    BT_CONNECT_VENDOR_OUTPUT_REPORT_SIZE, BT_CONNECT_VENDOR_INPUT_REPORT_SIZE,
-    BT_CONNECT_VENDOR_FEATURE_REPORT_SIZE,
+            BT_CONNECT_VENDOR_OUTPUT_REPORT_SIZE,
+            BT_CONNECT_VENDOR_INPUT_REPORT_SIZE,
+            BT_CONNECT_VENDOR_FEATURE_REPORT_SIZE,
 #endif
 );
 
@@ -191,6 +192,18 @@ static struct bt_connect_conn_state *alloc_conn_state(void) {
     return NULL;
 }
 
+static bool bt_connect_manages_conn(struct bt_conn *conn) {
+    struct bt_conn_info info;
+    int err = bt_conn_get_info(conn, &info);
+
+    if (err) {
+        LOG_WRN("Failed to get Bluetooth connection info (%d)", err);
+        return false;
+    }
+
+    return info.role == BT_CONN_ROLE_PERIPHERAL;
+}
+
 static void hids_pm_evt_handler(enum bt_hids_pm_evt evt, struct bt_conn *conn) {
     struct bt_connect_conn_state *state = find_conn_state(conn);
 
@@ -222,6 +235,10 @@ static void connected(struct bt_conn *conn, uint8_t err) {
 
     if (err) {
         LOG_ERR("Failed to connect (%d)", err);
+        return;
+    }
+
+    if (!bt_connect_manages_conn(conn)) {
         return;
     }
 
@@ -257,6 +274,10 @@ static void disconnected(struct bt_conn *conn, uint8_t reason) {
     bt_addr_le_t addr;
     int err;
 
+    if (!bt_connect_manages_conn(conn) && !state) {
+        return;
+    }
+
     bt_addr_le_copy(&addr, bt_conn_get_dst(conn));
 
     err = bt_hids_disconnected(&hids_obj, conn);
@@ -281,7 +302,9 @@ static void disconnected(struct bt_conn *conn, uint8_t reason) {
 
 static void security_changed(struct bt_conn *conn, bt_security_t level,
                              enum bt_security_err err) {
-    ARG_UNUSED(conn);
+    if (!bt_connect_manages_conn(conn)) {
+        return;
+    }
 
     if (err) {
         LOG_WRN("Security failed, level %u err %d", level, err);
@@ -305,6 +328,10 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 static void auth_cancel(struct bt_conn *conn) {
     char addr[BT_ADDR_LE_STR_LEN];
 
+    if (!bt_connect_manages_conn(conn)) {
+        return;
+    }
+
     bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
     LOG_INF("Pairing cancelled: %s", addr);
 }
@@ -312,12 +339,20 @@ static void auth_cancel(struct bt_conn *conn) {
 static void pairing_complete(struct bt_conn *conn, bool bonded) {
     char addr[BT_ADDR_LE_STR_LEN];
 
+    if (!bt_connect_manages_conn(conn)) {
+        return;
+    }
+
     bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
     LOG_INF("Pairing completed: %s, bonded: %d", addr, bonded);
 }
 
 static void pairing_failed(struct bt_conn *conn, enum bt_security_err reason) {
     char addr[BT_ADDR_LE_STR_LEN];
+
+    if (!bt_connect_manages_conn(conn)) {
+        return;
+    }
 
     bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
     LOG_WRN("Pairing failed: %s, reason %d", addr, reason);
@@ -337,8 +372,7 @@ void bt_connect_set_battery_level(uint8_t percentage) {
     battery_level_pending_valid = true;
 
     if (battery_notifications_ready) {
-        int err =
-            k_work_reschedule(&battery_level_publish_work, K_MSEC(50));
+        int err = k_work_reschedule(&battery_level_publish_work, K_MSEC(50));
         if (err < 0) {
             LOG_ERR("Failed to schedule BAS update (%d)", err);
         }
@@ -489,6 +523,14 @@ static int bt_connect_init(void) {
 #endif
 
     advertising_start();
+
+#if CONFIG_SPLITLINK_BT_CENTRAL
+    err = splitlink_bt_start();
+    if (err && err != -EALREADY) {
+        LOG_ERR("Failed to start Splitlink BT central (%d)", err);
+        return err;
+    }
+#endif // CONFIG_SPLITLINK_BT_CENTRAL
 
     return 0;
 }
