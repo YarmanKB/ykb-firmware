@@ -1,0 +1,54 @@
+menuconfig SPLITLINK_BT
+    bool "Enable Splitlink over Bluetooth"
+    select BT
+    select BT_CENTRAL if SPLITLINK_BT_CENTRAL
+    select BT_PERIPHERAL if SPLITLINK_BT_PERIPHERAL
+    select BT_GATT_CLIENT if SPLITLINK_BT_CENTRAL
+    depends on (DT_HAS_SPLITLINK_BT_CENTRAL_ENABLED || DT_HAS_SPLITLINK_BT_PERIPHERAL_ENABLED)
+    default y
+
+if SPLITLINK_BT
+
+config SPLITLINK_BT_CENTRAL
+    bool
+    default y if DT_HAS_SPLITLINK_BT_CENTRAL_ENABLED
+
+config SPLITLINK_BT_PERIPHERAL
+    bool
+    default y if DT_HAS_SPLITLINK_BT_PERIPHERAL_ENABLED
+
+config SPLITLINK_BT_INIT_PRIORITY
+    int "Splitlink Bluetooth init priority"
+    default APPLICATION_INIT_PRIORITY
+
+config SPLITLINK_BT_PACKET_LENGTH
+    int "Splitlink Bluetooth packet length"
+    default 64
+    range 1 64
+
+config SPLITLINK_BT_RX_QUEUE_DEPTH
+    int "Splitlink Bluetooth RX queue depth"
+    default 8
+    range 1 32
+
+configdefault BT_MAX_CONN
+    default 2 if BT_CONNECT
+    default 1
+
+configdefault BT_MAX_PAIRED
+    default 2 if BT_CONNECT
+    default 1
+
+configdefault BT_L2CAP_TX_MTU
+    default 69
+
+configdefault BT_BUF_ACL_RX_SIZE
+    default 73
+
+configdefault BT_ATT_TX_COUNT
+    default 5
+
+configdefault BT_GATT_AUTO_UPDATE_MTU
+    default y
+
+endif # SPLITLINK_BT

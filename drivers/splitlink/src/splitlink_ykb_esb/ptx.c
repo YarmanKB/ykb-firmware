@@ -4,11 +4,12 @@
 
 LOG_MODULE_REGISTER(splitlink_esb_ptx, CONFIG_SPLITLINK_LOG_LEVEL);
 
-#define SPLITLINK_ESB_INIT_DELAY_MS 5000
-#define SPLITLINK_ESB_RETRY_DELAY_MS 2000
+#define SPLITLINK_ESB_INIT_DELAY_MS 100
+#define SPLITLINK_ESB_RETRY_DELAY_MS 100
 
 static int splitlink_ykb_esb_send(const struct device *dev, uint8_t *data,
                                   size_t data_len) {
+    LOG_INF("SEND");
     if (data_len == 0 || data == NULL) {
         LOG_ERR("Invalid argument.");
         return -EINVAL;
@@ -50,16 +51,24 @@ static int splitlink_ykb_esb_send(const struct device *dev, uint8_t *data,
 }
 
 static void alive_work_handler(struct k_work *work) {
+    LOG_INF("ALIVE HANDLER");
     struct delayable_device_work *alive_work =
         CONTAINER_OF(work, struct delayable_device_work, d_work.work);
     ykb_esb_data_t alive_data = {
         .data = {FLAG_ALIVE},
         .len = 1,
     };
+    struct splitlink_data *data = alive_work->dev->data;
+    if (!data->ready) {
+        goto schedule;
+    }
     int err = ykb_esb_send(&alive_data);
     if (err) {
         LOG_ERR("Unable to send alive packet: %d", err);
+    } else {
+        LOG_INF("TX alive");
     }
+schedule:
     // Schedule itself
     k_work_schedule(&alive_work->d_work,
                     K_MSEC(CONFIG_SPLITLINK_YKB_ESB_PTX_ALIVE_DELAY));
@@ -107,6 +116,7 @@ static void receiving_work_handler(struct k_work *work) {
 static void on_esb_callback(ykb_esb_event_t *event, void *user_ptr) {
     const struct device *dev = user_ptr;
     struct splitlink_data *dev_data = dev->data;
+    LOG_INF("evt %d", event->evt_type);
     if (event->evt_type == YKB_ESB_EVT_RX && event->data_length > 2 &&
         event->buf[0] == FLAG_DATA) {
         dev_data->receiving_work.data_len = event->data_length - 1;
@@ -124,13 +134,11 @@ static void on_esb_callback(ykb_esb_event_t *event, void *user_ptr) {
         // And schedule it again
         k_work_schedule(&dev_data->disconnect_work.d_work,
                         K_MSEC(CONFIG_SPLITLINK_YKB_ESB_ALIVE_TIMEOUT));
-        LOG_DBG("TX success");
+        LOG_INF("TX success");
     }
-#if CONFIG_SPLITLINK_LOG_LEVEL == LOG_LEVEL_DBG
     if (event->evt_type == YKB_ESB_EVT_TX_FAIL) {
-        LOG_DBG("TX fail");
+        LOG_INF("TX fail");
     }
-#endif // CONFIG_SPLITLINK_LOG_LEVEL == LOG_LEVEL_DBG
 }
 
 static void init_work_handler(struct k_work *work) {
