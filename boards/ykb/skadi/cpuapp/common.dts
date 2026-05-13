@@ -6,6 +6,15 @@
 
 / {
 
+	gpio_fwd: nrf-gpio-forwarder {
+		compatible = "nordic,nrf-gpio-forwarder";
+		status = "okay";
+
+		cpunet_uart {
+			gpios = <&gpio1 14 0>, <&gpio1 15 0>;
+		};
+	};
+
 	aliases {
 		mcuboot-button0 = &button0;
 		mcuboot-led0 = &led0;

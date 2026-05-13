@@ -1,20 +1,21 @@
+if LOG
+
+    config SERIAL
+        default y
+
+    config CONSOLE
+        default y
+
+    config UART_CONSOLE
+        default y
+
+endif # LOG
+
 if BOARD_SKADI_NRF5340_CPUAPP_LEFT || BOARD_SKADI_NRF5340_CPUAPP_RIGHT
 
     DT_CHOSEN_Z_CODE_PARTITION := zephyr,code-partition
     DT_CHOSEN_Z_SRAM_PARTITION := zephyr,sram-secure-partition
 
-    if LOG
-
-        config SERIAL
-            default y
-
-        config CONSOLE
-            default y
-
-        config UART_CONSOLE
-            default y
-
-    endif # LOG
 
     if USB_DEVICE_STACK
 
@@ -31,7 +32,7 @@ if BOARD_SKADI_NRF5340_CPUAPP_LEFT || BOARD_SKADI_NRF5340_CPUAPP_RIGHT
         choice KB_HANDLER_IMPL
             default KB_HANDLER_SPLITLINK_MASTER if BOARD_SKADI_NRF5340_CPUAPP_LEFT
             default KB_HANDLER_SPLITLINK_SLAVE if BOARD_SKADI_NRF5340_CPUAPP_RIGHT
-            endchoice
+        endchoice
 
     endif # KB_HANDLER
 
@@ -41,7 +42,7 @@ if BOARD_SKADI_NRF5340_CPUAPP_LEFT || BOARD_SKADI_NRF5340_CPUAPP_RIGHT
             default 0x0001
 
         config USB_CONNECT_PRODUCT
-            default "Skadi"
+            default "YKB Skadi"
 
         config USB_CONNECT_MAX_POWER
             default 250
@@ -51,6 +52,7 @@ if BOARD_SKADI_NRF5340_CPUAPP_LEFT || BOARD_SKADI_NRF5340_CPUAPP_RIGHT
     if BT_CONNECT
 
         config BT_MAX_CONN
+            default 2 if SPLITLINK_BT_CENTRAL
             default 1
 
         config BT_HIDS_MAX_CLIENT_COUNT
@@ -60,7 +62,7 @@ if BOARD_SKADI_NRF5340_CPUAPP_LEFT || BOARD_SKADI_NRF5340_CPUAPP_RIGHT
             default 2
 
         config BT_DEVICE_NAME
-            default "Skadi"
+            default "YKB Skadi"
 
         config BT_DIS_PNP_PID
             default 0x0001
@@ -69,6 +71,14 @@ if BOARD_SKADI_NRF5340_CPUAPP_LEFT || BOARD_SKADI_NRF5340_CPUAPP_RIGHT
             default 0x0001
 
     endif # BT_CONNECT
+
+    if KB_HANDLER_SPLITLINK_SLAVE
+        config BT_CONNECT
+            default n
+
+        config USB_CONNECT
+            default n
+    endif # KB_HANDLER_SPLITLINK_SLAVE
 
     if BOARD_SKADI_NRF5340_CPUAPP && TRUSTED_EXECUTION_SECURE
 

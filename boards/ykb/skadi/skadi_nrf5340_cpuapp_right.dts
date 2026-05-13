@@ -16,5 +16,5 @@
 };
 
 &splitlink {
-	compatible = "splitlink-ykb-esb-ptx";
+	compatible = "splitlink-bt-peripheral";
 };
