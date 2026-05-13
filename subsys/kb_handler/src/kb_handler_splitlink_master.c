@@ -23,9 +23,9 @@ void splitlink_handler_values_received(uint16_t *slave_values, uint16_t count) {
 void splitlink_handler_on_connect() {
     LOG_INF("SplitLink slave connected");
 
-    if (!kb_handler_core_get_settings_snapshot(&splitlink_settings_tx)) {
-        splitlink_handler_send_settings(&splitlink_settings_tx);
-    }
+    // if (!kb_handler_core_get_settings_snapshot(&splitlink_settings_tx)) {
+    //     splitlink_handler_send_settings(&splitlink_settings_tx);
+    // }
 }
 
 void splitlink_handler_on_disconnect() {

@@ -12,12 +12,14 @@ if KB_HANDLER_SPLITLINK
 
         config KB_HANDLER_SL_OUT_OF_ORDER_TRACK
             bool "Enable out-of-order feature of YKB protocol"
+            default y if SPLITLINK_BT
             default n
 
         config KB_HANDLER_SL_BITMAP_LENGTH
-            bool "Bitmap length for out-of-order feature"
+            int "Bitmap length for out-of-order feature"
             depends on KB_HANDLER_SL_OUT_OF_ORDER_TRACK
             default 32
+            range 1 256
 
     endif # KB_HANDLER_SPLITLINK_HANDLER_IMPL_YKB_PROTO
 

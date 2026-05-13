@@ -1,5 +1,7 @@
 #include "kb_handler_internal.h"
 
+#include <stdatomic.h>
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
 #include "splitlink_handler/splitlink_handler.h"
@@ -11,7 +13,14 @@ BUILD_ASSERT(KEY_COUNT_SLAVE > 0,
 
 static uint16_t values[KEY_COUNT_SLAVE] = {0};
 
-static uint16_t new_value_counter = 0;
+static void send_values_work_handler(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(send_values_work, send_values_work_handler);
+static atomic_bool send_values_pending;
+
+static void send_values_work_handler(struct k_work *work) {
+    atomic_store_explicit(&send_values_pending, false, memory_order_relaxed);
+    splitlink_handler_send_values(values, KEY_COUNT_SLAVE);
+}
 
 static void on_new_value(uint16_t idx, uint16_t value) {
     if (idx >= KEY_COUNT_SLAVE) {
@@ -20,11 +29,11 @@ static void on_new_value(uint16_t idx, uint16_t value) {
     }
 
     values[idx] = value;
-
-    new_value_counter++;
-    if (new_value_counter >= KEY_COUNT_SLAVE) {
-        new_value_counter = 0;
-        splitlink_handler_send_values(values, KEY_COUNT_SLAVE);
+    bool expected = false;
+    if (atomic_compare_exchange_strong_explicit(&send_values_pending, &expected,
+                                                true, memory_order_relaxed,
+                                                memory_order_relaxed)) {
+        k_work_schedule(&send_values_work, K_MSEC(1));
     }
 }
 
@@ -50,10 +59,12 @@ void splitlink_handler_settings_received(const kb_settings_t *settings) {
 }
 
 void splitlink_handler_on_connect() {
+    //
     LOG_INF("SplitLink connected");
 }
 
 void splitlink_handler_on_disconnect() {
+    //
     LOG_INF("SplitLink disconnected");
 }
 
