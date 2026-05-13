@@ -1,0 +1,9 @@
+title: Splitlink over Bluetooth driver (peripheral role)
+
+description: >
+  A binding for Splitlink over a custom Bluetooth GATT transport, acting as the
+  peripheral/server side of the link.
+
+compatible: "splitlink-bt-peripheral"
+
+include: splitlink-bt.yaml
