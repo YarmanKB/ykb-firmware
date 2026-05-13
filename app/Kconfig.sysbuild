@@ -3,6 +3,9 @@ if SUPPORT_NETCORE
 config SUPPORT_NETCORE_CPUNET_MPSL
 	bool
 
+config SUPPORT_NETCORE_CPUNET_ESB
+    bool
+
 choice NETCORE
 	depends on !EXTERNAL_CONFIGURED_NETCORE
 
@@ -13,15 +16,24 @@ config NETCORE_CPUNET_MPSL
 	  Build the project's custom MPSL-based network core image from
 	  `cpunet_mpsl/`.
 
+config NETCORE_CPUNET_ESB
+    bool "cpunet_esb"
+    depends on SUPPORT_NETCORE_CPUNET_ESB
+    help
+      Build the project's custom ESB-based network core image from
+      `cpunet_esb/`.
+
 endchoice
 
 if !NETCORE_NONE
 
 config NETCORE_IMAGE_NAME
 	default "cpunet_mpsl" if NETCORE_CPUNET_MPSL
+    default "cpunet_esb" if NETCORE_CPUNET_ESB
 
 config NETCORE_IMAGE_PATH
 	default "$(APP_DIR)/../cpunet_mpsl" if NETCORE_CPUNET_MPSL
+    default "$(APP_DIR)/../cpunet_esb" if NETCORE_CPUNET_ESB
 
 endif # !NETCORE_NONE
 

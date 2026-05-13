@@ -18,7 +18,6 @@ static void on_event(uint16_t key_index, bool pressed) {
 
 KSCAN_CB_DEFINE(main) = {
     .on_event = on_event,
-    // .on_new_value = on_value_changed,
 };
 
 int main(void) {

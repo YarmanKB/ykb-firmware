@@ -11,10 +11,10 @@ config KB_SETTINGS
 	default y
 
 config USB_CONNECT
-	default y
+	default y if !KB_HANDLER_SPLITLINK_SLAVE
 
 config BT_CONNECT
-	default y
+	default y if !KB_HANDLER_SPLITLINK_SLAVE
 
 config YKB_BATTSENSE
 	default y
