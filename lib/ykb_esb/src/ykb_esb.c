@@ -1,6 +1,8 @@
 #include <lib/ykb_esb.h>
 
+#if CONFIG_LIB_YKB_ESB_MPSL
 #include <lib/ykb_timeslot.h>
+#endif
 
 #include <esb.h>
 
@@ -24,7 +26,11 @@ static uint8_t m_base_addr_0[4];
 static uint8_t m_base_addr_1[4];
 
 /* ------------------------- PTX TX queue ---------------------------- */
-/* Used only for PTX "initiated" transmissions. */
+/*
+ * The queue holds one in-flight packet per slot.  K_MSEC(100) in ykb_esb_send
+ * lets ESB TX_SUCCESS events drain the queue if it fills during a burst, so 8
+ * slots are sufficient without needing a larger (RAM-expensive) buffer.
+ */
 K_MSGQ_DEFINE(m_msgq_tx_payloads, sizeof(struct esb_payload), 8, 4);
 
 /* ------------------------- RX buffer ------------------------------- */
@@ -39,9 +45,11 @@ static bool m_prx_ack_cache_valid;
 
 static int clocks_start(void);
 static int esb_initialize(ykb_esb_mode_t mode);
-static void on_timeslot_start_stop(timeslot_callback_type_t type);
-
 static int ptx_kick_next_from_msgq(void);
+
+#if CONFIG_LIB_YKB_ESB_MPSL
+static void on_timeslot_start_stop(timeslot_callback_type_t type);
+#endif
 
 static void prx_preload_cached_ack(void);
 static void prx_set_cached_ack_from_data(const uint8_t *data, size_t len);
@@ -56,7 +64,7 @@ static void event_handler(struct esb_evt const *event) {
     case ESB_EVENT_TX_SUCCESS:
         LOG_DBG("ESB_EVENT_TX_SUCCESS");
 
-        /* PTX: pop the item we previously peeked */
+        /* PTX: consume the item we previously peeked */
         if (m_config.mode == YKB_ESB_MODE_PTX) {
             (void)k_msgq_get(&m_msgq_tx_payloads, &tmp_payload, K_NO_WAIT);
         }
@@ -73,20 +81,28 @@ static void event_handler(struct esb_evt const *event) {
         m_event.data_length = 0;
         m_callback(&m_event, m_config.user_ptr);
 
-        /* PTX: send next queued payload */
+        /* PTX: kick next queued payload now that ESB is idle */
         if (m_config.mode == YKB_ESB_MODE_PTX) {
             (void)ptx_kick_next_from_msgq();
         }
-
         break;
 
     case ESB_EVENT_TX_FAILED:
         LOG_DBG("ESB_EVENT_TX_FAILED");
 
         if (m_config.mode == YKB_ESB_MODE_PTX) {
-            /* Flush and retry later; your original behavior. */
             esb_flush_tx();
+#if CONFIG_LIB_YKB_ESB_MPSL
+            /* Within a timeslot: retry immediately — use all available airtime. */
             (void)ptx_kick_next_from_msgq();
+#else
+            /* Standalone: discard the failed packet so the queue drains.
+             * The caller (e.g. alive_work) will re-enqueue after its delay.
+             * Immediately retrying here without a PRX floods the IPC event
+             * path back to cpuapp and triggers the nRF RPC error handler. */
+            (void)k_msgq_get(&m_msgq_tx_payloads, &tmp_payload, K_NO_WAIT);
+            (void)ptx_kick_next_from_msgq();
+#endif
         }
 
         m_event.evt_type = YKB_ESB_EVT_TX_FAIL;
@@ -159,8 +175,6 @@ static void prx_preload_cached_ack(void) {
 
     int ret = esb_write_payload(&m_prx_ack_cache);
     LOG_DBG("PRX preload ack: ret=%d len=%u", ret, m_prx_ack_cache.length);
-
-    /* If ret < 0, you can log; retry will happen on next resume/update. */
 }
 
 static void prx_set_cached_ack_from_data(const uint8_t *data, size_t len) {
@@ -183,11 +197,6 @@ static void prx_set_cached_ack_from_data(const uint8_t *data, size_t len) {
     }
 }
 
-/* Optional public helper:
- * If you want to explicitly set the PRX ACK payload from the app, expose this
- * in your header. If you don't want a new API, see ykb_esb_send() PRX handling
- * below.
- */
 int ykb_esb_prx_set_ack_payload(const uint8_t *data, size_t len) {
     if (m_config.mode != YKB_ESB_MODE_PRX) {
         return -EINVAL;
@@ -221,7 +230,7 @@ static int esb_initialize(ykb_esb_mode_t mode) {
     config.selective_auto_ack = false;
 #if CONFIG_LIB_YKB_ESB_FAST_RAMP_UP
     config.use_fast_ramp_up = true;
-#endif // CONFIG_LIB_YKB_ESB_FAST_RAMP_UP
+#endif
 
     err = esb_init(&config);
     if (err) {
@@ -241,27 +250,32 @@ static int esb_initialize(ykb_esb_mode_t mode) {
     if (err)
         return err;
 
-    NVIC_SetPriority(RADIO_IRQn, 0);
+    /* Note: do NOT override NVIC_SetPriority for RADIO_IRQn here –
+     * MPSL manages the RADIO IRQ priority and it must not be changed. */
 
-#if CONFIG_LIB_YKB_ESB_MPSL
     if (mode == YKB_ESB_MODE_PRX) {
-        /* Restore cached ACK payload after every init/resume */
+        /* Preload cached ACK payload before starting RX. */
         prx_preload_cached_ack();
         esb_start_rx();
     }
-#endif // CONFIG_LIB_YKB_ESB_MPSL
 
     return 0;
 }
 
 /* -------------------- PTX msgq -> ESB TX ---------------------------- */
 
-#if CONFIG_LIB_YKB_ESB_MPSL
+/*
+ * Peek the next packet from the TX queue, write it to the ESB TX FIFO, and
+ * start the TX (if ESB is idle).  Only call when ESB is known to be idle
+ * (from resume or from TX_SUCCESS / TX_FAILED handlers).
+ *
+ * The item is NOT consumed from the queue here – it is removed in the
+ * ESB_EVENT_TX_SUCCESS handler after a successful transmission.
+ */
 static int ptx_kick_next_from_msgq(void) {
     int ret;
     static struct esb_payload tx_payload;
 
-    /* PTX: Peek, and remove only on TX_SUCCESS */
     if (k_msgq_peek(&m_msgq_tx_payloads, &tx_payload) != 0) {
         return -ENOMEM;
     }
@@ -274,7 +288,6 @@ static int ptx_kick_next_from_msgq(void) {
     esb_start_tx();
     return 0;
 }
-#endif // CONFIG_LIB_YKB_ESB_MPSL
 
 /* ------------------------- Public API ------------------------------ */
 
@@ -282,35 +295,38 @@ int ykb_esb_init(ykb_esb_config_t *cfg, ykb_esb_callback_t callback) {
 
     m_callback = callback;
     memcpy(&m_config, cfg, sizeof(m_config));
+    memcpy(m_base_addr_0, cfg->base_addr_0, sizeof(m_base_addr_0));
+    memcpy(m_base_addr_1, cfg->base_addr_1, sizeof(m_base_addr_1));
     m_active = false;
 
-#if CONFIG_LIB_YKB_ESB_MPSL
-    int ret;
-    /* Debug GPIOs (optional) */
-    // NRF_P0->DIRSET = BIT(28) | BIT(29) | BIT(30) | BIT(31) | BIT(4);
-    // NRF_P0->OUTCLR = BIT(28) | BIT(29) | BIT(30) | BIT(31);
-
-    ret = clocks_start();
+    int ret = clocks_start();
     if (ret < 0) {
         return ret;
     }
 
+#if CONFIG_LIB_YKB_ESB_MPSL
     LOG_INF("Timeslot handler init");
     timeslot_handler_init(on_timeslot_start_stop);
-#endif // CONFIG_LIB_YKB_ESB_MPSL
+#else
+    ret = esb_initialize(cfg->mode);
+    if (ret < 0) {
+        return ret;
+    }
+    m_active = true;
+    if (cfg->mode == YKB_ESB_MODE_PTX) {
+        (void)ptx_kick_next_from_msgq();
+    }
+#endif
 
     return 0;
 }
 
 /*
  * ykb_esb_send():
- *  - PTX: queue packet for normal transmit.
- *  - PRX (Pattern A): update the "latest ACK payload" cache, so that the next
- *    PTX TX will receive it as ACK payload.
- *
- * If you prefer to keep the old semantics (PRX shouldn't accept send),
- * you can return -ENOTSUP for PRX and use ykb_esb_prx_set_ack_payload()
- * instead.
+ *  - PTX: queue packet for transmission. Kicks the TX pipeline if ESB is
+ *    currently idle (i.e. the pipeline has drained).  If ESB is busy the
+ *    TX_SUCCESS handler will pick up the next item automatically.
+ *  - PRX (MPSL): update the "latest ACK payload" cache.
  */
 int ykb_esb_send(ykb_esb_data_t *tx_packet) {
     if (!tx_packet) {
@@ -321,13 +337,10 @@ int ykb_esb_send(ykb_esb_data_t *tx_packet) {
         return -EMSGSIZE;
     }
 
-#if CONFIG_LIB_YKB_ESB_MPSL
     if (m_config.mode == YKB_ESB_MODE_PRX) {
-        /* Overwrite cached ACK payload */
         prx_set_cached_ack_from_data(tx_packet->data, tx_packet->len);
         return 0;
     }
-#endif // CONFIG_LIB_YKB_ESB_MPSL
 
     /* PTX path */
     struct esb_payload tx_payload;
@@ -336,12 +349,27 @@ int ykb_esb_send(ykb_esb_data_t *tx_packet) {
     tx_payload.length = tx_packet->len;
     memcpy(tx_payload.data, tx_packet->data, tx_packet->len);
 
-    int ret = k_msgq_put(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
+    /*
+     * Always wait up to 100 ms for a queue slot.  When ESB is active the
+     * TX_SUCCESS handler drains slots at ~1 ms each, so this rarely blocks
+     * more than a few ms.  When ESB is suspended (between MPSL timeslots)
+     * the queue was purged on suspend, so it is usually empty; if it fills
+     * before a slot opens, the next timeslot will drain it well within 100 ms.
+     * Using K_NO_WAIT when inactive caused the alive packet to fail every
+     * time the queue was refilled by the kscan during an inter-timeslot gap.
+     */
+    int ret = k_msgq_put(&m_msgq_tx_payloads, &tx_payload, K_MSEC(100));
     if (ret != 0) {
         return -ENOMEM;
     }
 
-    if (m_active) {
+    /*
+     * Only kick TX if ESB is currently idle.  If it is busy the running
+     * TX chain will pick up this packet after the current one completes
+     * (in the TX_SUCCESS handler), so double-kicking must be avoided to
+     * prevent duplicate entries in the ESB TX FIFO.
+     */
+    if (m_active && esb_is_idle()) {
         (void)ptx_kick_next_from_msgq();
     }
 
@@ -354,35 +382,15 @@ int ykb_esb_send(ykb_esb_data_t *tx_packet) {
 static int ykb_esb_suspend(void) {
     m_active = false;
 
-    NRF_P0->OUTSET = BIT(29);
+    /*
+     * esb_disable() disables IRQs, stops the radio, deinitialises PPI and
+     * the system timer, and sets ESB state to UNINITIALIZED.  This is safe
+     * to call from the MPSL timeslot callback (TIMER0 IRQ context).
+     */
+    esb_disable();
 
-    if (m_config.mode == YKB_ESB_MODE_PTX) {
-        uint32_t irq_key = irq_lock();
-
-        irq_disable(RADIO_IRQn);
-        NVIC_DisableIRQ(RADIO_IRQn);
-
-        NRF_RADIO->SHORTS = 0;
-
-        NRF_RADIO->EVENTS_DISABLED = 0;
-        NRF_RADIO->TASKS_DISABLE = 1;
-        while (NRF_RADIO->EVENTS_DISABLED == 0) {
-        }
-
-        NRF_TIMER2->TASKS_STOP = 1;
-        NRF_RADIO->INTENCLR = 0xFFFFFFFF;
-
-        esb_disable();
-
-        NVIC_ClearPendingIRQ(RADIO_IRQn);
-        irq_unlock(irq_key);
-    } else {
-        /* PRX: stop RX and fully tear down if you're doing that each slot */
-        esb_stop_rx();
-        esb_disable();
-    }
-
-    NRF_P0->OUTCLR = BIT(29);
+    /* Clear any stale RADIO pending IRQ so it does not fire after we return. */
+    NVIC_ClearPendingIRQ(RADIO_IRQn);
 
     return 0;
 }
@@ -390,12 +398,8 @@ static int ykb_esb_suspend(void) {
 static int ykb_esb_resume(void) {
     int err;
 
-    NRF_P0->OUTSET = BIT(29);
-
     err = esb_initialize(m_config.mode);
     m_active = (err == 0);
-
-    NRF_P0->OUTCLR = BIT(29);
 
     if (err) {
         return err;
@@ -404,10 +408,8 @@ static int ykb_esb_resume(void) {
     /* PTX: kick TX if anything queued */
     if (m_config.mode == YKB_ESB_MODE_PTX) {
         (void)ptx_kick_next_from_msgq();
-    } else {
-        /* PRX: ensure cached ACK payload is loaded this slot */
-        prx_preload_cached_ack();
     }
+    /* PRX: prx_preload_cached_ack() is already called inside esb_initialize() */
 
     return 0;
 }
@@ -417,12 +419,10 @@ static int ykb_esb_resume(void) {
 static void on_timeslot_start_stop(timeslot_callback_type_t type) {
     switch (type) {
     case APP_TS_STARTED:
-        NRF_P0->OUTSET = BIT(31);
         (void)ykb_esb_resume();
         break;
 
     case APP_TS_STOPPED:
-        NRF_P0->OUTCLR = BIT(31);
         (void)ykb_esb_suspend();
         break;
 
@@ -431,4 +431,4 @@ static void on_timeslot_start_stop(timeslot_callback_type_t type) {
     }
 }
 
-#endif // CONFIG_LIB_YKB_ESB_MPSL
+#endif /* CONFIG_LIB_YKB_ESB_MPSL */

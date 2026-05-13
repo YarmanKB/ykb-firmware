@@ -51,6 +51,11 @@ static ykb_esb_callback_t m_callback;
 static ykb_esb_config_t m_config;
 static ykb_esb_event_t m_event;
 static uint8_t m_rx_buf[CONFIG_ESB_MAX_PAYLOAD_LENGTH];
+/* Set to true once nrf_rpc_init() has been called, regardless of outcome.
+ * nrf_rpc_init() must NOT be called a second time after the IPC transport has
+ * been partially set up (endpoint registered but bond timed out); doing so
+ * corrupts the IPC buffer pool and leads to an MPU fault. */
+static bool rpc_init_attempted;
 static bool rpc_initialized;
 static bool rpc_bound;
 
@@ -242,20 +247,35 @@ static void err_handler(const struct nrf_rpc_err_report *report) {
 }
 
 static int serialization_init(void) {
-    int err;
+    /*
+     * nrf_rpc_init() may only be called once.  With the IPC rpmsg backend,
+     * calling it again after a bond timeout leaves the endpoint registered
+     * but in an inconsistent state, which corrupts the IPC buffer pool on
+     * the next allocation and causes an MPU fault.
+     *
+     * Strategy:
+     *  - Call nrf_rpc_init() on the first invocation only.
+     *  - On subsequent retries just check rpc_bound; the async bound callback
+     *    (rpc_bound_handler) fires once cpunet's endpoint becomes ready.
+     */
+    if (!rpc_init_attempted) {
+        LOG_DBG("esb rpc init begin");
+        rpc_init_attempted = true;
 
-    if (rpc_initialized) {
-        return 0;
+        int err = nrf_rpc_init(err_handler);
+        if (err) {
+            LOG_ERR("nrf_rpc_init failed: %d – will retry via rpc_bound_handler", err);
+            /* Do NOT return -EAGAIN here; fall through and wait for
+             * rpc_bound_handler to set rpc_bound when cpunet is ready. */
+        } else {
+            rpc_initialized = true;
+        }
     }
 
-    LOG_DBG("esb rpc init begin");
-
-    err = nrf_rpc_init(err_handler);
-    if (err) {
+    /* Wait for the async group bound callback. */
+    if (!rpc_bound) {
         return -EAGAIN;
     }
-
-    rpc_initialized = true;
 
     return 0;
 }
@@ -278,6 +298,12 @@ int ykb_esb_init(ykb_esb_config_t *config, ykb_esb_callback_t callback) {
 }
 
 int ykb_esb_send(ykb_esb_data_t *tx_packet) {
-    //
+    /* Guard against callers (e.g. alive_work) that may fire before nRF RPC
+     * has been initialised and the remote group has been bound.  Calling
+     * nrf_rpc_cbor_cmd on an un-initialised transport corrupts the IPC
+     * buffer pool and leads to an MPU fault. */
+    if (!rpc_initialized || !rpc_bound) {
+        return -EAGAIN;
+    }
     return rpc_esb_tx(tx_packet);
 }

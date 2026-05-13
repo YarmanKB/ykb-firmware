@@ -19,13 +19,12 @@
 
 LOG_MODULE_REGISTER(ykb_esb_rpc, CONFIG_YKB_ESB_LOG_LEVEL);
 
-/* See rpc_app.c (in the cpuapp/ dir) for an explanation. */
 NRF_RPC_IPC_TRANSPORT(esb_group_tr, DEVICE_DT_GET(DT_NODELABEL(ipc0)),
                       "nrf_rpc_ept");
 NRF_RPC_GROUP_DEFINE_NOWAIT(esb_group, "esb_group_id", &esb_group_tr, NULL,
                             NULL, NULL, NULL, false);
 
-static void rpc_esb_event_send(uint32_t evt_type, uint8_t *rx_payload_buf,
+static void rpc_esb_event_send(uint32_t evt_type, const uint8_t *rx_payload_buf,
                                uint32_t rx_payload_length);
 
 static void work_send_evt_tx_success_func(struct k_work *item);
@@ -36,7 +35,13 @@ K_WORK_DEFINE(m_work_send_evt_tx_success, work_send_evt_tx_success_func);
 K_WORK_DEFINE(m_work_send_evt_tx_fail, work_send_evt_tx_fail_func);
 K_WORK_DEFINE(m_work_send_evt_rx_received, work_send_evt_rx_received_func);
 
-static uint8_t *last_rx_buf;
+/*
+ * RX data copy buffer.  The ESB event callback runs in ISR context and
+ * event->buf points to a module-static buffer that may be overwritten by
+ * the next RX event before the k_work item is processed.  Copy the payload
+ * here immediately in the callback so the work item always sees stable data.
+ */
+static uint8_t last_rx_data[CONFIG_ESB_MAX_PAYLOAD_LENGTH];
 static uint32_t last_rx_length;
 static bool rpc_initialized;
 
@@ -53,8 +58,10 @@ void on_esb_callback(ykb_esb_event_t *event, void *user_data) {
     case YKB_ESB_EVT_RX:
         LOG_INF("ESB RX: 0x%.2x-0x%.2x-0x%.2x-0x%.2x", event->buf[0],
                 event->buf[1], event->buf[2], event->buf[3]);
-        last_rx_buf = event->buf;
-        last_rx_length = event->data_length;
+        /* Copy immediately – event->buf is a static buffer that will be
+         * reused for the next RX before the work handler runs. */
+        last_rx_length = MIN(event->data_length, sizeof(last_rx_data));
+        memcpy(last_rx_data, event->buf, last_rx_length);
         k_work_submit(&m_work_send_evt_rx_received);
         break;
     default:
@@ -64,15 +71,15 @@ void on_esb_callback(ykb_esb_event_t *event, void *user_data) {
 }
 
 static void work_send_evt_tx_success_func(struct k_work *item) {
-    rpc_esb_event_send(YKB_ESB_EVT_TX_SUCCESS, 0, 0);
+    rpc_esb_event_send(YKB_ESB_EVT_TX_SUCCESS, NULL, 0);
 }
 
 static void work_send_evt_tx_fail_func(struct k_work *item) {
-    rpc_esb_event_send(YKB_ESB_EVT_TX_FAIL, 0, 0);
+    rpc_esb_event_send(YKB_ESB_EVT_TX_FAIL, NULL, 0);
 }
 
 static void work_send_evt_rx_received_func(struct k_work *item) {
-    rpc_esb_event_send(YKB_ESB_EVT_RX, last_rx_buf, last_rx_length);
+    rpc_esb_event_send(YKB_ESB_EVT_RX, last_rx_data, last_rx_length);
 }
 
 static int decode_struct(struct nrf_rpc_cbor_ctx *ctx, void *struct_ptr,
@@ -86,8 +93,8 @@ static int decode_struct(struct nrf_rpc_cbor_ctx *ctx, void *struct_ptr,
         err = -EBADMSG;
     }
 
-    if (expected_size != zst.len) {
-        LOG_ERR("struct size mismatch: expect %d got %d", expected_size,
+    if (!err && expected_size != zst.len) {
+        LOG_ERR("struct size mismatch: expect %zu got %zu", expected_size,
                 zst.len);
         err = -EMSGSIZE;
     }
@@ -95,67 +102,42 @@ static int decode_struct(struct nrf_rpc_cbor_ctx *ctx, void *struct_ptr,
     if (!err) {
         memcpy(struct_ptr, zst.value, zst.len);
     } else {
-        LOG_ERR("decoding failed");
+        LOG_ERR("decoding failed: %d", err);
     }
 
     return err;
 }
 
-/* Encode and send the return value (errcode) of `esb_simple_init`. */
 static void rpc_rsp(int32_t err) {
     struct nrf_rpc_cbor_ctx ctx;
 
     NRF_RPC_CBOR_ALLOC(&esb_group, ctx, CBOR_BUF_SIZE);
-
     zcbor_int32_put(ctx.zs, err);
-
     nrf_rpc_cbor_rsp_no_err(&esb_group, &ctx);
 }
 
-/* `esb_simple_init` RPC command handler.
- *
- * This will get called when the other core sends an nRF RPC command for the
- * group `esb_group` with command ID `RPC_COMMAND_INIT`.
- *
- * This command handler is registered using `NRF_RPC_CBOR_CMD_DECODER` at the
- * bottom of this file.
- */
 static void rpc_esb_init_handler(const struct nrf_rpc_group *group,
                                  struct nrf_rpc_cbor_ctx *ctx,
                                  void *handler_data) {
-    LOG_DBG("");
-
     int32_t err = 0;
     ykb_esb_config_t config;
 
     if (decode_struct(ctx, &config, sizeof(config))) {
-        LOG_DBG("decoding config struct failed");
         err = -EBADMSG;
     }
 
-    /* Call this as soon as the data has been pulled from the RPC CBOR buffer.
-     *
-     * This is important because nRF RPC will not be able to process another
-     * command (sent from the other core) until `nrf_rpc_cbor_decoding_done`
-     * has been called.
-     *
-     * The underlying reason is that nRF RPC over IPC will process incoming
-     * items in a workqueue, and an item is only marked as processed when
-     * this function is called (freeing the workqueue for the next one).
-     */
+    /* Release the decoding context before performing any blocking work. */
     nrf_rpc_cbor_decoding_done(group, ctx);
 
     if (!err) {
-        LOG_DBG("ykb_esb_init. Mode %i", config.mode);
-        // Null the user_ptr just in case
+        LOG_DBG("ykb_esb_init mode=%d", config.mode);
         config.user_ptr = NULL;
         err = ykb_esb_init(&config, on_esb_callback);
         if (err) {
-            LOG_ERR("ykb_esb init failed (err %d)", err);
+            LOG_ERR("ykb_esb_init failed: %d", err);
         }
     }
 
-    /* Encode the errcode and send it to the other core. */
     rpc_rsp(err);
 }
 
@@ -166,31 +148,24 @@ static void rpc_esb_tx_handler(const struct nrf_rpc_group *group,
     ykb_esb_data_t tx_payload;
 
     if (decode_struct(ctx, &tx_payload, sizeof(tx_payload))) {
-        LOG_DBG("decoding ykb_esb_data_t struct failed");
         err = -EBADMSG;
     }
 
-    nrf_rpc_cbor_decoding_done(&esb_group, ctx);
+    nrf_rpc_cbor_decoding_done(group, ctx);
 
     if (!err) {
-        LOG_INF("Send TX packet, data 0 0x%.2x, len %i", tx_payload.data[0],
+        LOG_DBG("ESB TX pkt data[0]=0x%.2x len=%u", tx_payload.data[0],
                 tx_payload.len);
         err = ykb_esb_send(&tx_payload);
         if (err < 0) {
-            LOG_ERR("ykb_esb_send: error %i", err);
+            LOG_ERR("ykb_esb_send: %d", err);
         }
     }
 
     rpc_rsp(err);
 }
 
-/* This is the callback passed to the esb_simple API, which
- * then calls the RPC remote callback (sends an event).
- *
- * On the remote (app core), the rpc event will then call
- * the function stored in p_rx_cb_remote.
- */
-static void rpc_esb_event_send(uint32_t evt_type, uint8_t *rx_buf,
+static void rpc_esb_event_send(uint32_t evt_type, const uint8_t *rx_buf,
                                uint32_t rx_length) {
     int err = 0;
     struct nrf_rpc_cbor_ctx ctx;
@@ -199,19 +174,15 @@ static void rpc_esb_event_send(uint32_t evt_type, uint8_t *rx_buf,
                        CBOR_BUF_SIZE + sizeof(err) + sizeof(evt_type) +
                            sizeof(uint32_t) + rx_length);
 
-    /* Always encode the error */
     if (!zcbor_int32_put(ctx.zs, err)) {
         err = -EINVAL;
     }
-
     if (err || !zcbor_uint32_put(ctx.zs, evt_type)) {
         err = -EINVAL;
     }
-
     if (err || !zcbor_uint32_put(ctx.zs, rx_length)) {
         err = -EINVAL;
     }
-
     if (rx_length > 0) {
         if (err || !zcbor_bstr_encode_ptr(ctx.zs, rx_buf, rx_length)) {
             err = -EINVAL;
@@ -222,10 +193,8 @@ static void rpc_esb_event_send(uint32_t evt_type, uint8_t *rx_buf,
         err = nrf_rpc_cbor_evt(&esb_group, RPC_EVENT_ESB_CB, &ctx);
     }
 
-    if (!err) {
-        LOG_DBG("evt send ok");
-    } else {
-        LOG_DBG("evt send err %d", err);
+    if (err) {
+        LOG_DBG("rpc_esb_event_send err=%d", err);
     }
 }
 
@@ -235,7 +204,7 @@ NRF_RPC_CBOR_CMD_DECODER(esb_group, rpc_esb_tx, RPC_COMMAND_ESB_TX,
                          rpc_esb_tx_handler, NULL);
 
 static void err_handler(const struct nrf_rpc_err_report *report) {
-    LOG_ERR("nRF RPC error %d. Enable nRF RPC logs for details.", report->code);
+    LOG_ERR("nRF RPC error %d", report->code);
     k_oops();
 }
 
@@ -246,15 +215,15 @@ int ykb_esb_rpc_start(void) {
         return 0;
     }
 
-    LOG_DBG("nRF RPC init begin");
+    LOG_DBG("nRF RPC init");
 
     err = nrf_rpc_init(err_handler);
     if (err) {
         return -EINVAL;
     }
 
-    LOG_DBG("nRF RPC init ok");
     rpc_initialized = true;
+    LOG_DBG("nRF RPC init ok");
 
     return 0;
 }

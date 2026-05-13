@@ -8,59 +8,67 @@
 #include <mpsl.h>
 #include <mpsl_timeslot.h>
 
-#include <zephyr/console/console.h>
 #include <zephyr/irq.h>
 #include <zephyr/kernel.h>
-#include <zephyr/sys/printk.h>
-#include <zephyr/sys/ring_buffer.h>
 #include <zephyr/types.h>
 
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(ykb_timeslot, CONFIG_YKB_TIMESLOT_LOG_LEVEL);
 
+/*
+ * Timeslot parameters:
+ *
+ *   LENGTH_US            : initial (and extension) slot duration
+ *   TIMER_EXPIRY_US_EARLY: fire CC0 this many µs before slot end to attempt
+ *                          an extension; must satisfy the MPSL extension margin.
+ *   TIMER_EXPIRY_REQ     : fire CC1 this many µs before slot end to request
+ *                          a fresh timeslot if extension failed.
+ */
 #define TIMESLOT_REQUEST_TIMEOUT_US 1000000
-#define TIMESLOT_LENGTH_US 10000
-#define TIMESLOT_EXT_MARGIN_MARGIN 1000
-#define TIMESLOT_REQ_EARLIEST_MARGIN 100
-#define TIMER_EXPIRY_US_EARLY                                                  \
-    (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US -              \
-     TIMESLOT_EXT_MARGIN_MARGIN)
-#define TIMER_EXPIRY_REQ                                                       \
-    (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US -              \
-     TIMESLOT_REQ_EARLIEST_MARGIN)
+#define TIMESLOT_LENGTH_US          10000
+#define TIMESLOT_EXT_MARGIN_US      1000
+#define TIMESLOT_REQ_EARLIEST_MARGIN_US 200
 
-#define MPSL_THREAD_PRIO 8
-#define STACKSIZE CONFIG_MAIN_STACK_SIZE
+#define TIMER_EXPIRY_US_EARLY \
+    (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US - TIMESLOT_EXT_MARGIN_US)
+#define TIMER_EXPIRY_REQ \
+    (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US - TIMESLOT_REQ_EARLIEST_MARGIN_US)
+
+/* The MPSL non-preemptible thread must run at this cooperative priority. */
+#define MPSL_THREAD_PRIO CONFIG_MPSL_THREAD_COOP_PRIO
+#define STACKSIZE        CONFIG_LIB_YKB_TIMESLOT_STACK_SIZE
 
 static timeslot_callback_t m_callback;
-static volatile bool m_in_timeslot = false;
+static volatile bool m_in_timeslot;
 
-// Declare the RADIO IRQ handler to supress warning
+/* Declare the ESB RADIO IRQ handler – prevents implicit-function-declaration warning */
 void radio_irq_handler(void);
 
-// Requests and callbacks to be run serialized from an SWI interrupt
+/* Messages to serialise MPSL API calls onto the non-preemptible thread */
 enum mpsl_timeslot_call { OPEN_SESSION, MAKE_REQUEST, CLOSE_SESSION };
 
-// Timeslot request
+/*
+ * Use XTAL_GUARANTEED so that MPSL ensures the crystal is stable before
+ * granting the timeslot.  ESB needs an accurate HF clock for reliable RF.
+ */
 static mpsl_timeslot_request_t timeslot_request_earliest = {
     .request_type = MPSL_TIMESLOT_REQ_TYPE_EARLIEST,
-    .params.earliest.hfclk = MPSL_TIMESLOT_HFCLK_CFG_NO_GUARANTEE,
+    .params.earliest.hfclk = MPSL_TIMESLOT_HFCLK_CFG_XTAL_GUARANTEED,
     .params.earliest.priority = MPSL_TIMESLOT_PRIORITY_NORMAL,
     .params.earliest.length_us = TIMESLOT_LENGTH_US,
-    .params.earliest.timeout_us = TIMESLOT_REQUEST_TIMEOUT_US};
+    .params.earliest.timeout_us = TIMESLOT_REQUEST_TIMEOUT_US,
+};
 
 static mpsl_timeslot_signal_return_param_t signal_callback_return_param;
 
-// Message queue for requesting MPSL API calls to non-preemptible thread
+/* Message queue for requesting MPSL API calls from the non-preemptible thread */
 K_MSGQ_DEFINE(mpsl_api_msgq, sizeof(enum mpsl_timeslot_call), 10, 4);
 
 static void schedule_request(enum mpsl_timeslot_call call) {
-    int err;
-    enum mpsl_timeslot_call api_call = call;
-    err = k_msgq_put(&mpsl_api_msgq, &api_call, K_NO_WAIT);
+    int err = k_msgq_put(&mpsl_api_msgq, &call, K_NO_WAIT);
     if (err) {
-        LOG_ERR("Message sent error: %d", err);
+        LOG_ERR("schedule_request failed: %d", err);
         k_oops();
     }
 }
@@ -82,38 +90,42 @@ static void set_timeslot_active_status(bool active) {
 static mpsl_timeslot_signal_return_param_t *
 mpsl_timeslot_callback(mpsl_timeslot_session_id_t session_id,
                        uint32_t signal_type) {
-    (void)session_id; // unused parameter
+    (void)session_id;
     static bool timeslot_extension_failed;
-    NRF_P0->OUTSET = BIT(28);
     mpsl_timeslot_signal_return_param_t *p_ret_val = NULL;
+
     switch (signal_type) {
+
     case MPSL_TIMESLOT_SIGNAL_START:
-        signal_callback_return_param.callback_action =
-            MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
-        p_ret_val = &signal_callback_return_param;
-
-        timeslot_extension_failed = false;
-
-        // Reset the radio to make sure no configuration remains from BLE
+        /* Reset RADIO to clear any leftover BLE configuration. */
         NVIC_ClearPendingIRQ(RADIO_IRQn);
         NRF_RADIO->POWER = RADIO_POWER_POWER_Disabled << RADIO_POWER_POWER_Pos;
         NRF_RADIO->POWER = RADIO_POWER_POWER_Enabled << RADIO_POWER_POWER_Pos;
         NVIC_ClearPendingIRQ(RADIO_IRQn);
 
+        /* TIMER0 is reset at slot start and clocked at 1 MHz. */
         nrf_timer_bit_width_set(MPSL_TIMER0, NRF_TIMER_BIT_WIDTH_32);
 
-        nrf_timer_cc_set(MPSL_TIMER0, NRF_TIMER_CC_CHANNEL0,
-                         TIMER_EXPIRY_US_EARLY);
+        /* CC0: trigger extension request before slot end. */
+        nrf_timer_cc_set(MPSL_TIMER0, NRF_TIMER_CC_CHANNEL0, TIMER_EXPIRY_US_EARLY);
         nrf_timer_int_enable(MPSL_TIMER0, NRF_TIMER_INT_COMPARE0_MASK);
 
+        /* CC1: fallback – request a fresh slot if extension failed. */
         nrf_timer_cc_set(MPSL_TIMER0, NRF_TIMER_CC_CHANNEL1, TIMER_EXPIRY_REQ);
         nrf_timer_int_enable(MPSL_TIMER0, NRF_TIMER_INT_COMPARE1_MASK);
+
+        timeslot_extension_failed = false;
+
+        signal_callback_return_param.callback_action =
+            MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
+        p_ret_val = &signal_callback_return_param;
 
         set_timeslot_active_status(true);
         break;
 
     case MPSL_TIMESLOT_SIGNAL_TIMER0:
         if (nrf_timer_event_check(MPSL_TIMER0, NRF_TIMER_EVENT_COMPARE0)) {
+            /* CC0: attempt to extend the timeslot. */
             nrf_timer_int_disable(MPSL_TIMER0, NRF_TIMER_INT_COMPARE0_MASK);
             nrf_timer_event_clear(MPSL_TIMER0, NRF_TIMER_EVENT_COMPARE0);
 
@@ -121,12 +133,13 @@ mpsl_timeslot_callback(mpsl_timeslot_session_id_t session_id,
                 MPSL_TIMESLOT_SIGNAL_ACTION_EXTEND;
             signal_callback_return_param.params.extend.length_us =
                 TIMESLOT_LENGTH_US;
-        } else if (nrf_timer_event_check(MPSL_TIMER0,
-                                         NRF_TIMER_EVENT_COMPARE1)) {
+        } else if (nrf_timer_event_check(MPSL_TIMER0, NRF_TIMER_EVENT_COMPARE1)) {
+            /* CC1: extension window is over. */
             nrf_timer_int_disable(MPSL_TIMER0, NRF_TIMER_INT_COMPARE1_MASK);
             nrf_timer_event_clear(MPSL_TIMER0, NRF_TIMER_EVENT_COMPARE1);
 
             if (timeslot_extension_failed) {
+                /* Request a new earliest timeslot. */
                 signal_callback_return_param.callback_action =
                     MPSL_TIMESLOT_SIGNAL_ACTION_REQUEST;
                 signal_callback_return_param.params.request.p_next =
@@ -140,31 +153,37 @@ mpsl_timeslot_callback(mpsl_timeslot_session_id_t session_id,
         break;
 
     case MPSL_TIMESLOT_SIGNAL_EXTEND_SUCCEEDED:
+        /* Advance both compare values by one slot length. */
+        {
+            uint32_t cc0 = nrf_timer_cc_get(MPSL_TIMER0, NRF_TIMER_CC_CHANNEL0);
+            uint32_t cc1 = nrf_timer_cc_get(MPSL_TIMER0, NRF_TIMER_CC_CHANNEL1);
+
+            nrf_timer_cc_set(MPSL_TIMER0, NRF_TIMER_CC_CHANNEL0,
+                             cc0 + TIMESLOT_LENGTH_US);
+            nrf_timer_int_enable(MPSL_TIMER0, NRF_TIMER_INT_COMPARE0_MASK);
+
+            nrf_timer_cc_set(MPSL_TIMER0, NRF_TIMER_CC_CHANNEL1,
+                             cc1 + TIMESLOT_LENGTH_US);
+            nrf_timer_int_enable(MPSL_TIMER0, NRF_TIMER_INT_COMPARE1_MASK);
+        }
+
         signal_callback_return_param.callback_action =
             MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
-
-        // Set next trigger time to be the current + Timer expiry early
-        uint32_t current_cc =
-            nrf_timer_cc_get(MPSL_TIMER0, NRF_TIMER_CC_CHANNEL0);
-        nrf_timer_bit_width_set(MPSL_TIMER0, NRF_TIMER_BIT_WIDTH_32);
-        nrf_timer_cc_set(MPSL_TIMER0, NRF_TIMER_CC_CHANNEL0,
-                         current_cc + TIMESLOT_LENGTH_US);
-        nrf_timer_int_enable(MPSL_TIMER0, NRF_TIMER_INT_COMPARE0_MASK);
-
-        current_cc = nrf_timer_cc_get(MPSL_TIMER0, NRF_TIMER_CC_CHANNEL1);
-        nrf_timer_bit_width_set(MPSL_TIMER0, NRF_TIMER_BIT_WIDTH_32);
-        nrf_timer_cc_set(MPSL_TIMER0, NRF_TIMER_CC_CHANNEL1,
-                         current_cc + TIMESLOT_LENGTH_US);
-        nrf_timer_int_enable(MPSL_TIMER0, NRF_TIMER_INT_COMPARE1_MASK);
-
         p_ret_val = &signal_callback_return_param;
         break;
 
     case MPSL_TIMESLOT_SIGNAL_EXTEND_FAILED:
+        /*
+         * Extension was denied.  Stop ESB and let CC1 fire to request a
+         * new timeslot.  We remain inside the current (un-extended) slot
+         * until CC1 returns SIGNAL_ACTION_REQUEST.
+         */
+        timeslot_extension_failed = true;
+
         signal_callback_return_param.callback_action =
             MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
-        timeslot_extension_failed = true;
         p_ret_val = &signal_callback_return_param;
+
         set_timeslot_active_status(false);
         break;
 
@@ -173,8 +192,6 @@ mpsl_timeslot_callback(mpsl_timeslot_session_id_t session_id,
             MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
         p_ret_val = &signal_callback_return_param;
 
-        // We have to manually call the RADIO IRQ handler when the RADIO signal
-        // occurs
         if (m_in_timeslot) {
             radio_irq_handler();
         } else {
@@ -184,7 +201,7 @@ mpsl_timeslot_callback(mpsl_timeslot_session_id_t session_id,
         break;
 
     case MPSL_TIMESLOT_SIGNAL_OVERSTAYED:
-        LOG_WRN("something overstayed!");
+        LOG_WRN("timeslot overstayed");
         signal_callback_return_param.callback_action =
             MPSL_TIMESLOT_SIGNAL_ACTION_END;
         p_ret_val = &signal_callback_return_param;
@@ -192,30 +209,29 @@ mpsl_timeslot_callback(mpsl_timeslot_session_id_t session_id,
         break;
 
     case MPSL_TIMESLOT_SIGNAL_CANCELLED:
-        LOG_DBG("something cancelled!");
+        LOG_DBG("timeslot cancelled");
         signal_callback_return_param.callback_action =
             MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
         p_ret_val = &signal_callback_return_param;
         set_timeslot_active_status(false);
-
-        // In this case returning SIGNAL_ACTION_REQUEST causes hardfault. We
-        // have to request a new timeslot instead, from thread context.
+        /*
+         * Returning SIGNAL_ACTION_REQUEST from CANCELLED causes a hard fault;
+         * schedule from thread context instead.
+         */
         schedule_request(MAKE_REQUEST);
         break;
 
     case MPSL_TIMESLOT_SIGNAL_BLOCKED:
-        LOG_INF("something blocked!");
+        LOG_INF("timeslot blocked");
         signal_callback_return_param.callback_action =
             MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
         p_ret_val = &signal_callback_return_param;
         set_timeslot_active_status(false);
-
-        // Request a new timeslot in this case
         schedule_request(MAKE_REQUEST);
         break;
 
     case MPSL_TIMESLOT_SIGNAL_INVALID_RETURN:
-        LOG_WRN("something gave invalid return");
+        LOG_WRN("timeslot invalid return");
         signal_callback_return_param.callback_action =
             MPSL_TIMESLOT_SIGNAL_ACTION_END;
         p_ret_val = &signal_callback_return_param;
@@ -223,20 +239,16 @@ mpsl_timeslot_callback(mpsl_timeslot_session_id_t session_id,
         break;
 
     case MPSL_TIMESLOT_SIGNAL_SESSION_IDLE:
-        LOG_INF("idle");
-
-        // Request a new timeslot in this case
-        schedule_request(MAKE_REQUEST);
-
+        LOG_INF("timeslot session idle");
         signal_callback_return_param.callback_action =
             MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
         p_ret_val = &signal_callback_return_param;
         set_timeslot_active_status(false);
+        schedule_request(MAKE_REQUEST);
         break;
 
     case MPSL_TIMESLOT_SIGNAL_SESSION_CLOSED:
-        LOG_INF("Session closed");
-
+        LOG_INF("timeslot session closed");
         signal_callback_return_param.callback_action =
             MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
         p_ret_val = &signal_callback_return_param;
@@ -248,57 +260,57 @@ mpsl_timeslot_callback(mpsl_timeslot_session_id_t session_id,
         k_oops();
         break;
     }
-    NRF_P0->OUTCLR = BIT(28);
+
     return p_ret_val;
 }
 
+/* Non-preemptible thread that serialises MPSL timeslot API calls */
 static void mpsl_nonpreemptible_thread(void) {
     int err;
-    enum mpsl_timeslot_call api_call = 0;
-
-    /* Initialize to invalid session id */
+    enum mpsl_timeslot_call api_call;
     mpsl_timeslot_session_id_t session_id = 0xFFu;
 
     while (1) {
-        if (k_msgq_get(&mpsl_api_msgq, &api_call, K_FOREVER) == 0) {
-            switch (api_call) {
-            case OPEN_SESSION:
-                err = mpsl_timeslot_session_open(mpsl_timeslot_callback,
-                                                 &session_id);
-                if (err) {
-                    LOG_ERR("Timeslot session open error: %d", err);
-                    k_oops();
-                }
-                break;
-            case MAKE_REQUEST:
-                err = mpsl_timeslot_request(session_id,
-                                            &timeslot_request_earliest);
-                if (err) {
-                    LOG_ERR("Timeslot request error: %d", err);
-                    k_oops();
-                }
-                break;
-            case CLOSE_SESSION:
-                err = mpsl_timeslot_session_close(session_id);
-                if (err) {
-                    LOG_ERR("Timeslot session close error: %d", err);
-                    k_oops();
-                }
-                break;
-            default:
-                LOG_ERR("Wrong timeslot API call");
+        if (k_msgq_get(&mpsl_api_msgq, &api_call, K_FOREVER) != 0) {
+            continue;
+        }
+
+        switch (api_call) {
+        case OPEN_SESSION:
+            err = mpsl_timeslot_session_open(mpsl_timeslot_callback, &session_id);
+            if (err) {
+                LOG_ERR("session open error: %d", err);
                 k_oops();
-                break;
             }
+            break;
+
+        case MAKE_REQUEST:
+            err = mpsl_timeslot_request(session_id, &timeslot_request_earliest);
+            if (err) {
+                LOG_ERR("timeslot request error: %d", err);
+                k_oops();
+            }
+            break;
+
+        case CLOSE_SESSION:
+            err = mpsl_timeslot_session_close(session_id);
+            if (err) {
+                LOG_ERR("session close error: %d", err);
+                k_oops();
+            }
+            break;
+
+        default:
+            LOG_ERR("unknown timeslot API call: %d", api_call);
+            k_oops();
+            break;
         }
     }
 }
 
 void timeslot_handler_init(timeslot_callback_t callback) {
     m_callback = callback;
-
     schedule_request(OPEN_SESSION);
-
     schedule_request(MAKE_REQUEST);
 }
 

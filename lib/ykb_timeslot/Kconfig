@@ -8,4 +8,13 @@ if LIB_YKB_TIMESLOT
     module-str = ykb_timeslot
     source "subsys/logging/Kconfig.template.log_config"
 
+    config LIB_YKB_TIMESLOT_STACK_SIZE
+        int "MPSL non-preemptible thread stack size"
+        default 1024
+        help
+          Stack size for the cooperative thread that serialises MPSL timeslot
+          API calls (session open/close and timeslot requests).  This thread
+          only calls a handful of MPSL functions and does not need a large
+          stack; 1024 bytes is sufficient.
+
 endif # LIB_YKB_TIMESLOT
