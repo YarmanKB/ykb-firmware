@@ -22,7 +22,7 @@
 LOG_MODULE_REGISTER(kb_settings, CONFIG_KB_SETTINGS_LOG_LEVEL);
 
 // Increment every time kb_settings_image_t or it's contents change
-#define KB_SETTINGS_IMAGE_VERSION 2
+#define KB_SETTINGS_IMAGE_VERSION 1
 
 typedef struct {
     uint16_t version;
@@ -49,6 +49,8 @@ kb_settings_handle_on_update_snapshot(const kb_settings_t *settings) {
 
 static int kb_settings_load_defaults(void) {
     int err;
+    const kb_fn_shortcut_t *fn_shortcuts = NULL;
+    size_t fn_shortcuts_count;
 
     k_mutex_lock(&kb_settings_mut, K_FOREVER);
 
@@ -72,14 +74,38 @@ static int kb_settings_load_defaults(void) {
         goto cleanup;
     }
 
+    fn_shortcuts_count = kb_handler_get_default_fn_shortcuts(&fn_shortcuts);
+    if (fn_shortcuts_count > CONFIG_KB_SETTINGS_FN_SHORTCUTS_MAX) {
+        err = -E2BIG;
+        goto cleanup;
+    }
+
+    kb_settings.fn_shortcuts_count = (uint8_t)fn_shortcuts_count;
+    memset(kb_settings.fn_shortcuts, 0, sizeof(kb_settings.fn_shortcuts));
+    if (fn_shortcuts_count > 0U && fn_shortcuts) {
+        memcpy(kb_settings.fn_shortcuts, fn_shortcuts,
+               fn_shortcuts_count * sizeof(kb_fn_shortcut_t));
+    }
+
     uint16_t thresholds[TOTAL_KEY_COUNT];
+    uint16_t minimums[TOTAL_KEY_COUNT];
+    uint16_t maximums[TOTAL_KEY_COUNT];
     err = kb_handler_get_default_thresholds(thresholds);
+    if (err) {
+        goto cleanup;
+    }
+    err = kb_handler_get_default_minimums(minimums);
+    if (err) {
+        goto cleanup;
+    }
+    err = kb_handler_get_default_maximums(maximums);
     if (err) {
         goto cleanup;
     }
     for (uint16_t i = 0; i < TOTAL_KEY_COUNT; ++i) {
         kb_settings.thresholds[i] = thresholds[i];
-        kb_settings.maximums[i] = 1023;
+        kb_settings.minimums[i] = minimums[i];
+        kb_settings.maximums[i] = maximums[i];
     }
 
 #if CONFIG_YKB_BACKLIGHT

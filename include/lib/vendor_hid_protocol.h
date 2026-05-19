@@ -5,8 +5,10 @@
 #include <lib/ykb_protocol.h>
 
 #include <subsys/kb_settings.h>
+#include <subsys/ykb_backlight.h>
 
 #include <zephyr/kernel.h>
+#include <zephyr/sys/util_macro.h>
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -17,6 +19,12 @@ enum request_type {
     REQUEST_GET_VALUES = 1U,
     REQUEST_GET_SETTINGS = 2U,
     REQUEST_SET_SETTINGS = 3U,
+    REQUEST_GET_LUMISCRIPT_SLOT = 4U,
+    REQUEST_SET_LUMISCRIPT_SLOT = 5U,
+    REQUEST_GET_LUMISCRIPT_SLOT_INFO = 6U,
+    REQUEST_CLEAR_LUMISCRIPT_SLOT = 7U,
+    REQUEST_RENAME_LUMISCRIPT_SLOT = 8U,
+    REQUEST_SET_ACTIVE_LUMISCRIPT_SLOT = 9U,
 };
 
 enum response_type {
@@ -24,10 +32,45 @@ enum response_type {
     RESPONSE_GET_VALUES = 1U,
     RESPONSE_GET_SETTINGS = 2U,
     RESPONSE_SET_SETTINGS_OK = 3U,
+    RESPONSE_GET_LUMISCRIPT_SLOT = 4U,
+    RESPONSE_SET_LUMISCRIPT_SLOT_OK = 5U,
+    RESPONSE_GET_LUMISCRIPT_SLOT_INFO = 6U,
+    RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK = 7U,
+    RESPONSE_RENAME_LUMISCRIPT_SLOT_OK = 8U,
+    RESPONSE_SET_ACTIVE_LUMISCRIPT_SLOT_OK = 9U,
     RESPONSE_ERROR = 255U,
 };
 
-#define MAX_PACKET_LEN (sizeof(kb_settings_t))
+typedef struct __packed {
+    uint8_t occupied;
+    uint32_t size;
+    char name[CONFIG_YKB_BL_SCRIPT_NAME_MAX_LEN + 1];
+    uint8_t bytecode[CONFIG_YKB_BL_SCRIPT_SLOT_SIZE];
+} vendor_hid_proto_script_slot_payload_t;
+
+typedef struct __packed {
+    uint16_t slot;
+} vendor_hid_proto_script_slot_get_request_t;
+
+typedef struct __packed {
+    uint16_t slot;
+    uint8_t occupied;
+    uint32_t size;
+    char name[CONFIG_YKB_BL_SCRIPT_NAME_MAX_LEN + 1];
+} vendor_hid_proto_script_slot_info_t;
+
+typedef struct __packed {
+    uint16_t slot;
+    vendor_hid_proto_script_slot_payload_t payload;
+} vendor_hid_proto_script_slot_packet_t;
+
+typedef struct __packed {
+    uint16_t slot;
+    char name[CONFIG_YKB_BL_SCRIPT_NAME_MAX_LEN + 1];
+} vendor_hid_proto_script_slot_rename_request_t;
+
+#define VENDOR_HID_MAX_DATA_LEN                                               \
+    MAX(sizeof(kb_settings_t), sizeof(vendor_hid_proto_script_slot_packet_t))
 
 typedef struct __packed {
     uint8_t type;
@@ -35,7 +78,7 @@ typedef struct __packed {
 
 typedef struct __packed {
     vendor_hid_proto_request_header_t header;
-    uint8_t data[MAX_PACKET_LEN];
+    uint8_t data[VENDOR_HID_MAX_DATA_LEN];
 } vendor_hid_proto_packet_t;
 
 typedef int (*vendor_hid_send_packet_cb_t)(const uint8_t *data, size_t len,

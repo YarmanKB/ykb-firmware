@@ -37,11 +37,28 @@ def parse_layout(path: Path):
             raise ValueError(
                 f"{path}:{lineno}: content found before any section")
 
-        for token in line.split():
-            if token != "|":
-                data[current].append(token)
+        parts = [part.strip() for part in line.split("|")]
+        if len(parts) > 2:
+            raise ValueError(
+                f"{path}:{lineno}: section '{current}' should contain at most one '|' separator per row"
+            )
+
+        left_tokens = parts[0].split() if parts[0] else []
+        right_tokens = parts[1].split() if len(parts) == 2 and parts[1] else []
+        data[current].append((left_tokens, right_tokens))
 
     return data
+
+
+def flatten_split_rows(rows):
+    left_values = []
+    right_values = []
+
+    for left_tokens, right_tokens in rows:
+        left_values.extend(left_tokens)
+        right_values.extend(right_tokens)
+
+    return left_values + right_values
 
 
 def parse_u16_array(tokens, path: Path, section: str):
@@ -84,11 +101,11 @@ def main():
     files = [Path(p) for p in args.bins]
     layout_path = Path(args.layout)
     layout_sections = parse_layout(layout_path)
-    led_map = parse_u16_array(layout_sections["led_map"], layout_path,
+    led_map = parse_u16_array(flatten_split_rows(layout_sections["led_map"]), layout_path,
                               "led_map")
-    x_coordinates = parse_u16_array(layout_sections["x_coordinates"],
+    x_coordinates = parse_u16_array(flatten_split_rows(layout_sections["x_coordinates"]),
                                     layout_path, "x_coordinates")
-    y_coordinates = parse_u16_array(layout_sections["y_coordinates"],
+    y_coordinates = parse_u16_array(flatten_split_rows(layout_sections["y_coordinates"]),
                                     layout_path, "y_coordinates")
 
     key_count = len(led_map)
@@ -126,11 +143,26 @@ def main():
 
 #define GENERATED_BACKLIGHT_LAYOUT_KEY_COUNT {key_count}U
 
-extern const ykb_backlight_settings_t {args.symbol};
+extern const ykb_backlight_script_slots_t {args.symbol};
 """)
 
-    names_init = "\n".join(f'        "{n}",' for n in names)
-    offsets_init = ", ".join(str(x) for x in offsets)
+    slot_entries = []
+    for index, (name, file_path) in enumerate(zip(names, files)):
+        data = file_path.read_bytes()
+        bytecode_init = format_c_array([str(b) for b in data],
+                                       wrap=16,
+                                       indent="                ")
+        slot_entries.append(f"""\
+        [{index}] = {{
+            .occupied = true,
+            .size = {len(data)},
+            .name = "{name}",
+            .bytecode = {{
+{bytecode_init}
+            }},
+        }},""")
+
+    slots_init = "\n".join(slot_entries)
 
     out_c.write_text(f"""\
 #include "generated_backlight_resources.h"
@@ -159,6 +191,8 @@ static const uint16_t generated_backlight_y_coordinates[] = {{
 
 BUILD_ASSERT(GENERATED_BACKLIGHT_LAYOUT_KEY_COUNT == TOTAL_KEY_COUNT,
              "generated backlight layout should match TOTAL_KEY_COUNT");
+BUILD_ASSERT({len(names)} <= CONFIG_YKB_BL_SCRIPT_SLOT_COUNT,
+             "default backlight scripts exceed configured slot count");
 
 static const ykb_backlight_layout_t generated_backlight_layout = {{
     .key_count = GENERATED_BACKLIGHT_LAYOUT_LOCAL_KEY_COUNT,
@@ -173,22 +207,10 @@ const ykb_backlight_layout_t *ykb_backlight_get_layout(void) {{
     return &generated_backlight_layout;
 }}
 
-const ykb_backlight_settings_t {args.symbol} =
+const ykb_backlight_script_slots_t {args.symbol} =
 {{
-    .on = true,
-    .script_amount = {len(names)},
-    .active_script_index = 2,
-    .speed = 1.0f,
-    .brightness = 1.0f,
-    .thread_sleep_ms = DEFAULT_THREAD_SLEEP_MS,
-    .names =
-    {{
-{names_init}
-    }},
-    .offsets = {{ {offsets_init} }},
-    .backlight_data =
-    {{
-{format_c_array([str(b) for b in blob], wrap=16, indent="        ")}
+    .slots = {{
+{slots_init}
     }},
 }};
 """)

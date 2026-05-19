@@ -23,8 +23,8 @@ config SPLITLINK_BT_INIT_PRIORITY
 
 config SPLITLINK_BT_PACKET_LENGTH
     int "Splitlink Bluetooth packet length"
-    default 64
-    range 1 64
+    default 72
+    range 1 244
 
 config SPLITLINK_BT_RX_QUEUE_DEPTH
     int "Splitlink Bluetooth RX queue depth"
@@ -40,15 +40,39 @@ configdefault BT_MAX_PAIRED
     default 1
 
 configdefault BT_L2CAP_TX_MTU
-    default 69
+    default 77
 
 configdefault BT_BUF_ACL_RX_SIZE
-    default 73
+    default 81
+
+configdefault BT_BUF_ACL_TX_SIZE
+    default 81
 
 configdefault BT_ATT_TX_COUNT
-    default 5
+    default 10
+
+configdefault BT_PERIPHERAL_PREF_MIN_INT
+    default 6
+
+configdefault BT_PERIPHERAL_PREF_MAX_INT
+    default 6
+
+configdefault BT_PERIPHERAL_PREF_LATENCY
+    default 0
+
+configdefault BT_PERIPHERAL_PREF_TIMEOUT
+    default 400
 
 configdefault BT_GATT_AUTO_UPDATE_MTU
+    default y
+
+configdefault BT_AUTO_DATA_LEN_UPDATE
+    default y
+
+configdefault BT_USER_PHY_UPDATE
+    default y
+
+configdefault BT_USER_DATA_LEN_UPDATE
     default y
 
 endif # SPLITLINK_BT

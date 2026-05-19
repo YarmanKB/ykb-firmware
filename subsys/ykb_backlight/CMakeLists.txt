@@ -37,7 +37,7 @@ add_custom_command(
         --out-c ${GENERATED_BACKLIGHT_C}
         --out-h ${GENERATED_BACKLIGHT_H}
         --layout ${BACKLIGHT_LAYOUT_FILE}
-        --symbol default_backlight_settings
+        --symbol default_backlight_script_slots
         ${LUMISCRIPT_BC_FILES}
     DEPENDS
         ${APP_DIR}/../scripts/gen_ykb_backlight_resources.py

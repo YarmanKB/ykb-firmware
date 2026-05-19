@@ -21,6 +21,22 @@ if KB_HANDLER_SPLITLINK
             default 32
             range 1 256
 
+        config KB_HANDLER_SL_BENCHMARK
+            bool "Enable Splitlink RTT benchmark"
+            default n
+
+        config KB_HANDLER_SL_BENCHMARK_INTERVAL_MS
+            int "Splitlink RTT benchmark interval in ms"
+            depends on KB_HANDLER_SL_BENCHMARK
+            default 1000
+            range 1 60000
+
+        config KB_HANDLER_SL_BENCHMARK_PAYLOAD_SIZE
+            int "Splitlink RTT benchmark payload size"
+            depends on KB_HANDLER_SL_BENCHMARK
+            default 16
+            range 0 48
+
     endif # KB_HANDLER_SPLITLINK_HANDLER_IMPL_YKB_PROTO
 
 endif # KB_HANDLER_SPLITLINK

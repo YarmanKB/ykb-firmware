@@ -26,10 +26,17 @@ if YKB_BACKLIGHT
 
     menu "Lumiscript VM"
 
-        config YKB_BL_MAX_SCRIPTS
-            int "Maximum amount of scripts stored in settings"
-            depends on LIB_KB_SETTINGS
-            default 10
+        config YKB_BL_SCRIPT_SLOT_COUNT
+            int "Number of persistent Lumiscript slots"
+            default 8
+
+        config YKB_BL_SCRIPT_SLOT_SIZE
+            int "Maximum bytecode size per persistent Lumiscript slot"
+            default 1024
+
+        config YKB_BL_SCRIPT_NAME_MAX_LEN
+            int "Maximum Lumiscript slot name length"
+            default 20
 
         config YKB_BL_LUMIVM_CONST_CAPACITY
             int "Lumiscript VM max amount of constants"

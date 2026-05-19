@@ -127,10 +127,36 @@ int kb_handler_get_default_mouseemu(kb_mouseemu_settings_t *buffer) {
     return 0;
 }
 
+size_t kb_handler_get_default_fn_shortcuts(const kb_fn_shortcut_t **shortcuts) {
+    if (shortcuts) {
+        *shortcuts = generated_kb_handler_default_fn_shortcuts;
+    }
+
+    return generated_kb_handler_default_fn_shortcuts_count;
+}
+
 int kb_handler_get_default_thresholds(uint16_t *buffer) {
     if (buffer) {
         memcpy(buffer, generated_kb_handler_default_thresholds,
                sizeof(generated_kb_handler_default_thresholds));
+    }
+
+    return 0;
+}
+
+int kb_handler_get_default_minimums(uint16_t *buffer) {
+    if (buffer) {
+        memcpy(buffer, generated_kb_handler_default_minimums,
+               sizeof(generated_kb_handler_default_minimums));
+    }
+
+    return 0;
+}
+
+int kb_handler_get_default_maximums(uint16_t *buffer) {
+    if (buffer) {
+        memcpy(buffer, generated_kb_handler_default_maximums,
+               sizeof(generated_kb_handler_default_maximums));
     }
 
     return 0;

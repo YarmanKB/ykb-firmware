@@ -25,6 +25,10 @@ set(mcuboot_EXTRA_CONF_FILE
     "${_ykb_board_dir}/sysbuild/mcuboot.conf"
     CACHE INTERNAL "Board-specific MCUboot sysbuild fragment"
 )
+set(hci_ipc_EXTRA_CONF_FILE
+    "${_ykb_board_dir}/sysbuild/hci_ipc.conf"
+    CACHE INTERNAL "Board-specific hci_ipc sysbuild fragment"
+)
 
 find_package(Sysbuild REQUIRED HINTS $ENV{ZEPHYR_BASE})
 

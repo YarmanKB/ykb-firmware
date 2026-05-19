@@ -10,6 +10,8 @@ LOG_MODULE_REGISTER(vendor_hid_protocol, LOG_LEVEL_INF);
 
 static FEATURES_DEFINE(features);
 static kb_settings_t settings_snap;
+static vendor_hid_proto_script_slot_packet_t script_slot_snap;
+static vendor_hid_proto_script_slot_info_t script_slot_info_snap;
 
 static device_features *vendor_hid_protocol_get_features(void) {
     return &features;
@@ -33,6 +35,137 @@ static int vendor_hid_protocol_set_settings(const kb_settings_t *settings) {
     int err = kb_settings_apply(settings);
     if (err) {
         LOG_ERR("kb_settings_apply: %d", err);
+    }
+
+    return err;
+}
+
+static void vendor_hid_protocol_script_slot_to_wire(
+    vendor_hid_proto_script_slot_payload_t *out,
+    const ykb_backlight_script_slot_t *in) {
+    out->occupied = in->occupied ? 1U : 0U;
+    out->size = in->size;
+    memcpy(out->name, in->name, sizeof(out->name));
+    memcpy(out->bytecode, in->bytecode, sizeof(out->bytecode));
+}
+
+static void vendor_hid_protocol_script_slot_from_wire(
+    ykb_backlight_script_slot_t *out,
+    const vendor_hid_proto_script_slot_payload_t *in) {
+    out->occupied = in->occupied != 0U;
+    out->size = in->size;
+    memcpy(out->name, in->name, sizeof(out->name));
+    out->name[ARRAY_SIZE(out->name) - 1] = '\0';
+    memcpy(out->bytecode, in->bytecode, sizeof(out->bytecode));
+}
+
+static int vendor_hid_protocol_get_script_slot(
+    uint16_t slot, vendor_hid_proto_script_slot_packet_t *out) {
+    ykb_backlight_script_slot_t slot_data;
+    int err;
+
+    err = ykb_backlight_get_script_slot(slot, &slot_data);
+    if (err) {
+        LOG_ERR("ykb_backlight_get_script_slot(%u): %d", slot, err);
+        return err;
+    }
+
+    out->slot = slot;
+    vendor_hid_protocol_script_slot_to_wire(&out->payload, &slot_data);
+
+    return 0;
+}
+
+static int vendor_hid_protocol_set_script_slot(
+    const vendor_hid_proto_script_slot_packet_t *in) {
+    ykb_backlight_script_slot_t slot_data;
+    int err;
+
+    vendor_hid_protocol_script_slot_from_wire(&slot_data, &in->payload);
+    err = ykb_backlight_set_script_slot(in->slot, &slot_data);
+    if (err) {
+        LOG_ERR("ykb_backlight_set_script_slot(%u): %d", in->slot, err);
+    }
+
+    return err;
+}
+
+static int vendor_hid_protocol_get_script_slot_info(
+    uint16_t slot, vendor_hid_proto_script_slot_info_t *out) {
+    ykb_backlight_script_slot_t slot_data;
+    int err;
+
+    err = ykb_backlight_get_script_slot(slot, &slot_data);
+    if (err) {
+        LOG_ERR("ykb_backlight_get_script_slot(%u): %d", slot, err);
+        return err;
+    }
+
+    out->slot = slot;
+    out->occupied = slot_data.occupied ? 1U : 0U;
+    out->size = slot_data.size;
+    memcpy(out->name, slot_data.name, sizeof(out->name));
+
+    return 0;
+}
+
+static int vendor_hid_protocol_clear_script_slot(uint16_t slot) {
+    ykb_backlight_script_slot_t slot_data = {0};
+    int err = ykb_backlight_set_script_slot(slot, &slot_data);
+    if (err) {
+        LOG_ERR("ykb_backlight_set_script_slot(clear %u): %d", slot, err);
+    }
+
+    return err;
+}
+
+static int vendor_hid_protocol_rename_script_slot(
+    const vendor_hid_proto_script_slot_rename_request_t *in) {
+    ykb_backlight_script_slot_t slot_data;
+    int err;
+
+    err = ykb_backlight_get_script_slot(in->slot, &slot_data);
+    if (err) {
+        LOG_ERR("ykb_backlight_get_script_slot(%u): %d", in->slot, err);
+        return err;
+    }
+
+    memcpy(slot_data.name, in->name, sizeof(slot_data.name));
+    slot_data.name[ARRAY_SIZE(slot_data.name) - 1] = '\0';
+
+    err = ykb_backlight_set_script_slot(in->slot, &slot_data);
+    if (err) {
+        LOG_ERR("ykb_backlight_set_script_slot(rename %u): %d", in->slot, err);
+    }
+
+    return err;
+}
+
+static int vendor_hid_protocol_set_active_script_slot(uint16_t slot) {
+    ykb_backlight_script_slot_t slot_data;
+    kb_settings_t settings;
+    int err;
+
+    err = ykb_backlight_get_script_slot(slot, &slot_data);
+    if (err) {
+        LOG_ERR("ykb_backlight_get_script_slot(%u): %d", slot, err);
+        return err;
+    }
+
+    if (!slot_data.occupied || slot_data.size == 0) {
+        return -ENOENT;
+    }
+
+    err = kb_settings_get(&settings);
+    if (err) {
+        LOG_ERR("kb_settings_get: %d", err);
+        return err;
+    }
+
+    settings.backlight.active_script_index = slot;
+    err = kb_settings_apply(&settings);
+    if (err) {
+        LOG_ERR("kb_settings_apply(active_script_index=%u): %d", slot, err);
     }
 
     return err;
@@ -79,6 +212,60 @@ static void response_work_handler(struct k_work *work) {
     }
     case RESPONSE_SET_SETTINGS_OK:
         response_code = RESPONSE_SET_SETTINGS_OK;
+        data = &response_code;
+        len = sizeof(response_code);
+        break;
+    case RESPONSE_GET_LUMISCRIPT_SLOT: {
+        const vendor_hid_proto_packet_t *request =
+            (const vendor_hid_proto_packet_t *)ctx->rx_buffer;
+        const vendor_hid_proto_script_slot_get_request_t *slot_request =
+            (const vendor_hid_proto_script_slot_get_request_t *)request->data;
+        int err =
+            vendor_hid_protocol_get_script_slot(slot_request->slot, &script_slot_snap);
+        if (err) {
+            response_code = RESPONSE_ERROR;
+            data = &response_code;
+            len = sizeof(response_code);
+            break;
+        }
+        data = (uint8_t *)&script_slot_snap;
+        len = sizeof(script_slot_snap);
+        break;
+    }
+    case RESPONSE_SET_LUMISCRIPT_SLOT_OK:
+        response_code = RESPONSE_SET_LUMISCRIPT_SLOT_OK;
+        data = &response_code;
+        len = sizeof(response_code);
+        break;
+    case RESPONSE_GET_LUMISCRIPT_SLOT_INFO: {
+        const vendor_hid_proto_packet_t *request =
+            (const vendor_hid_proto_packet_t *)ctx->rx_buffer;
+        const vendor_hid_proto_script_slot_get_request_t *slot_request =
+            (const vendor_hid_proto_script_slot_get_request_t *)request->data;
+        int err = vendor_hid_protocol_get_script_slot_info(slot_request->slot,
+                                                           &script_slot_info_snap);
+        if (err) {
+            response_code = RESPONSE_ERROR;
+            data = &response_code;
+            len = sizeof(response_code);
+            break;
+        }
+        data = (uint8_t *)&script_slot_info_snap;
+        len = sizeof(script_slot_info_snap);
+        break;
+    }
+    case RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK:
+        response_code = RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK;
+        data = &response_code;
+        len = sizeof(response_code);
+        break;
+    case RESPONSE_RENAME_LUMISCRIPT_SLOT_OK:
+        response_code = RESPONSE_RENAME_LUMISCRIPT_SLOT_OK;
+        data = &response_code;
+        len = sizeof(response_code);
+        break;
+    case RESPONSE_SET_ACTIVE_LUMISCRIPT_SLOT_OK:
+        response_code = RESPONSE_SET_ACTIVE_LUMISCRIPT_SLOT_OK;
         data = &response_code;
         len = sizeof(response_code);
         break;
@@ -185,6 +372,47 @@ int vendor_hid_protocol_parse(vendor_hid_protocol_ctx_t *ctx,
             (const kb_settings_t *)request->data);
         ctx->current_response =
             (err == 0) ? RESPONSE_SET_SETTINGS_OK : RESPONSE_ERROR;
+        break;
+    }
+    case REQUEST_GET_LUMISCRIPT_SLOT:
+        ctx->current_response = RESPONSE_GET_LUMISCRIPT_SLOT;
+        break;
+
+    case REQUEST_SET_LUMISCRIPT_SLOT: {
+        int err = vendor_hid_protocol_set_script_slot(
+            (const vendor_hid_proto_script_slot_packet_t *)request->data);
+        ctx->current_response =
+            (err == 0) ? RESPONSE_SET_LUMISCRIPT_SLOT_OK : RESPONSE_ERROR;
+        break;
+    }
+    case REQUEST_GET_LUMISCRIPT_SLOT_INFO:
+        ctx->current_response = RESPONSE_GET_LUMISCRIPT_SLOT_INFO;
+        break;
+
+    case REQUEST_CLEAR_LUMISCRIPT_SLOT: {
+        const vendor_hid_proto_script_slot_get_request_t *slot_request =
+            (const vendor_hid_proto_script_slot_get_request_t *)request->data;
+        int err = vendor_hid_protocol_clear_script_slot(slot_request->slot);
+        ctx->current_response =
+            (err == 0) ? RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK : RESPONSE_ERROR;
+        break;
+    }
+
+    case REQUEST_RENAME_LUMISCRIPT_SLOT: {
+        int err = vendor_hid_protocol_rename_script_slot(
+            (const vendor_hid_proto_script_slot_rename_request_t *)request->data);
+        ctx->current_response =
+            (err == 0) ? RESPONSE_RENAME_LUMISCRIPT_SLOT_OK : RESPONSE_ERROR;
+        break;
+    }
+
+    case REQUEST_SET_ACTIVE_LUMISCRIPT_SLOT: {
+        const vendor_hid_proto_script_slot_get_request_t *slot_request =
+            (const vendor_hid_proto_script_slot_get_request_t *)request->data;
+        int err = vendor_hid_protocol_set_active_script_slot(slot_request->slot);
+        ctx->current_response = (err == 0)
+                                    ? RESPONSE_SET_ACTIVE_LUMISCRIPT_SLOT_OK
+                                    : RESPONSE_ERROR;
         break;
     }
 

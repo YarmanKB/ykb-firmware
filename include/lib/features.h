@@ -15,7 +15,7 @@
 #define FEATURES_MAX_VENDOR_NAME 10
 #define FEATURES_MAX_SOC_NAME 10
 
-#define FEATURES_VERSION_1 1U
+#define FEATURES_VERSION_2 2U
 
 typedef struct __packed {
     const uint8_t features_version;
@@ -34,6 +34,10 @@ typedef struct __packed {
     const uint16_t ykb_backlight_key_var_cap;
     const uint16_t ykb_backlight_code_cap;
     const uint16_t ykb_backlight_stack_cap;
+    const uint16_t ykb_backlight_script_slot_count;
+    const uint16_t ykb_backlight_script_slot_size;
+    const uint16_t ykb_backlight_script_name_max_len;
+    const uint16_t kb_fn_shortcuts_max;
 
     const uint32_t storage_size;
 
@@ -56,7 +60,7 @@ typedef struct __packed {
 
 #define FEATURES_DEFINE(name)                                                  \
     device_features name = {                                                   \
-        .features_version = FEATURES_VERSION_1,                                \
+        .features_version = FEATURES_VERSION_2,                                \
         .board_name = CONFIG_BOARD,                                            \
         .rev_name = CONFIG_BOARD_REVISION,                                     \
         .vendor_name = "YarmanKB",                                             \
@@ -82,6 +86,13 @@ typedef struct __packed {
                     CONFIG_YKB_BL_LUMIVM_CODE_CAPACITY),                       \
         FEATURE_DEP(ykb_backlight_stack_cap, CONFIG_YKB_BACKLIGHT,             \
                     CONFIG_YKB_BL_LUMIVM_STACK_CAPACITY),                      \
+        FEATURE_DEP(ykb_backlight_script_slot_count, CONFIG_YKB_BACKLIGHT,     \
+                    CONFIG_YKB_BL_SCRIPT_SLOT_COUNT),                          \
+        FEATURE_DEP(ykb_backlight_script_slot_size, CONFIG_YKB_BACKLIGHT,      \
+                    CONFIG_YKB_BL_SCRIPT_SLOT_SIZE),                           \
+        FEATURE_DEP(ykb_backlight_script_name_max_len, CONFIG_YKB_BACKLIGHT,   \
+                    CONFIG_YKB_BL_SCRIPT_NAME_MAX_LEN),                        \
+        .kb_fn_shortcuts_max = CONFIG_KB_SETTINGS_FN_SHORTCUTS_MAX,           \
                                                                                \
         FEATURE(ykb_battsense, CONFIG_YKB_BATTSENSE),                          \
                                                                                \

@@ -7,6 +7,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#if CONFIG_YKB_BACKLIGHT
+#include <subsys/ykb_backlight.h>
+#endif
+
 #if CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE
 #define TOTAL_KEY_COUNT                                                        \
     (CONFIG_KB_SETTINGS_KEY_COUNT + CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE)
@@ -35,43 +39,35 @@ typedef struct {
     uint16_t thread_sleep_ms;
 } kb_battsense_settings_t;
 
-#if CONFIG_YKB_BACKLIGHT
-
-#ifndef CONFIG_KB_SETTINGS_YKB_BL_SCRIPT_STORAGE_LEN
-#define CONFIG_KB_SETTINGS_YKB_BL_SCRIPT_STORAGE_LEN                           \
-    4096 // Space for all the scripts
-#endif   // CONFIG_KB_SETTINGS_YKB_BL_SCRIPT_STORAGE_LEN
-
-#define KB_SETTINGS_YKB_BL_SCRIPT_MIN_LEN                                      \
-    64 // Assuming each script takes up at least 64 bytes
-
-#ifndef CONFIG_KB_SETTINGS_YKB_BL_SCRIPT_NAME_MAX_LEN
-#define CONFIG_KB_SETTINGS_YKB_BL_SCRIPT_NAME_MAX_LEN 20
-#endif // CONFIG_KB_SETTINGS_YKB_BL_SCRIPT_NAME_MAX_LEN
-
-#define KB_SETTINGS_MAX_SCRIPTS_POSSIBLE                                       \
-    (CONFIG_KB_SETTINGS_YKB_BL_SCRIPT_STORAGE_LEN /                            \
-     KB_SETTINGS_YKB_BL_SCRIPT_MIN_LEN)
-
 enum kb_handler_transport_priority {
     KBH_TRANSPORT_PRIO_USB = 0U,
     KBH_TRANSPORT_PRIO_BT = 1U,
 };
 
-typedef struct {
-    bool on;
-    uint16_t active_script_index;
-    uint16_t script_amount;
-    float speed;
-    float brightness;
-    uint32_t thread_sleep_ms;
-    uint32_t offsets[KB_SETTINGS_MAX_SCRIPTS_POSSIBLE + 1];
-    char names[CONFIG_KB_SETTINGS_YKB_BL_SCRIPT_NAME_MAX_LEN + 1]
-              [KB_SETTINGS_MAX_SCRIPTS_POSSIBLE];
-    uint8_t backlight_data[CONFIG_KB_SETTINGS_YKB_BL_SCRIPT_STORAGE_LEN];
-} ykb_backlight_settings_t;
+typedef enum {
+    KB_FN_ACTION_NONE = 0U,
+    KB_FN_ACTION_MODE_NORMAL,
+    KB_FN_ACTION_MODE_RACE,
+    KB_FN_ACTION_MODE_MOUSESIM,
+    KB_FN_ACTION_TRANSPORT_USB,
+    KB_FN_ACTION_TRANSPORT_BT,
+    KB_FN_ACTION_BL_TOGGLE,
+    KB_FN_ACTION_BL_NEXT_SCRIPT,
+    KB_FN_ACTION_BL_PREV_SCRIPT,
+    KB_FN_ACTION_BL_BRIGHTNESS_UP,
+    KB_FN_ACTION_BL_BRIGHTNESS_DOWN,
+    KB_FN_ACTION_BL_SPEED_UP,
+    KB_FN_ACTION_BL_SPEED_DOWN,
+    KB_FN_ACTION_BL_SET_SCRIPT,
+    KB_FN_ACTION_BL_SET_BRIGHTNESS,
+    KB_FN_ACTION_BL_SET_SPEED,
+} kb_fn_action_t;
 
-#endif // CONFIG_YKB_BACKLIGHT
+typedef struct {
+    uint8_t key;
+    kb_fn_action_t action;
+    int16_t param;
+} kb_fn_shortcut_t;
 
 typedef struct {
 
@@ -101,6 +97,7 @@ typedef struct {
     kb_mode_t mode;
 
     uint16_t thresholds[TOTAL_KEY_COUNT];
+    uint16_t minimums[TOTAL_KEY_COUNT];
     uint16_t maximums[TOTAL_KEY_COUNT];
 
     uint8_t mappings_layer1[TOTAL_KEY_COUNT];
@@ -112,6 +109,9 @@ typedef struct {
     kb_battsense_settings_t battsense;
 
     enum kb_handler_transport_priority kbh_prio;
+
+    uint8_t fn_shortcuts_count;
+    kb_fn_shortcut_t fn_shortcuts[CONFIG_KB_SETTINGS_FN_SHORTCUTS_MAX];
 
 #if CONFIG_YKB_BACKLIGHT
     ykb_backlight_settings_t backlight;

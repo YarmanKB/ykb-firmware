@@ -25,16 +25,8 @@ if KB_SETTINGS
         int "Init priority"
         default 140
 
-    if YKB_BACKLIGHT
-
-        config KB_SETTINGS_YKB_BL_SCRIPT_STORAGE_LEN
-            int "Amount of storage (in bytes) reserved for Lumiscript backlight scripts available in KB Settings"
-            default 2048
-
-        config KB_SETTINGS_YKB_BL_SCRIPT_NAME_MAX_LEN
-            int "Maximum amount of characters for a Lumiscript backlight script name"
-            default 15
-
-    endif # YKB_BACKLIGHT
+    config KB_SETTINGS_FN_SHORTCUTS_MAX
+        int "Maximum amount of runtime-configurable FN shortcuts"
+        default 16
 
 endif # KB_SETTINGS

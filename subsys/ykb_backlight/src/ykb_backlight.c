@@ -9,15 +9,26 @@
 #include <drivers/kscan.h>
 
 #include <math.h>
+#include <string.h>
 #include <zephyr/drivers/led_strip.h>
+#include <zephyr/settings/settings.h>
+#include <zephyr/sys/crc.h>
 #include <zephyr/sys/util.h>
 
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(ykb_backlight, CONFIG_YKB_BACKLIGHT_LOG_LEVEL);
 
+#define YKB_BACKLIGHT_SETTINGS_NS "ykb_bl"
+#define YKB_BACKLIGHT_SETTINGS_ITEM "scripts"
+#define YKB_BACKLIGHT_SETTINGS_KEY                                             \
+    YKB_BACKLIGHT_SETTINGS_NS "/" YKB_BACKLIGHT_SETTINGS_ITEM
+#define YKB_BACKLIGHT_SCRIPT_IMAGE_VERSION 1U
+
 static const struct device *led_strip = Z_USER_DEV(ykb_backlight);
 static const ykb_backlight_layout_t *layout;
+static const ykb_backlight_script_slots_t *default_script_slots =
+    &default_backlight_script_slots;
 
 static const size_t led_count =
     DT_PROP(Z_USER_PROP(ykb_backlight), chain_length);
@@ -41,6 +52,8 @@ static int64_t prev_update = 0;
 static float cur_speed = 1.0;
 static float cur_brightness = 1.0;
 static bool on = true;
+static bool scripts_registered = false;
+static bool scripts_loaded = false;
 
 static bool script_loaded = false;
 
@@ -55,6 +68,108 @@ static struct led_rgb
     _buffer2[DT_PROP(Z_USER_PROP(ykb_backlight), chain_length)] = {0};
 static struct led_rgb *buf_front = _buffer1;
 static struct led_rgb *buf_back = _buffer2;
+
+typedef struct {
+    uint16_t version;
+    ykb_backlight_script_slots_t slots;
+} ykb_backlight_script_image_t;
+
+static ykb_backlight_script_slots_t script_slots;
+static ykb_backlight_script_image_t load_img;
+static ykb_backlight_script_image_t save_img;
+static const ykb_backlight_settings_t default_backlight_settings = {
+    .on = true,
+    .active_script_index = (CONFIG_YKB_BL_SCRIPT_SLOT_COUNT > 2) ? 2 : 0,
+    .speed = 1.0f,
+    .brightness = 1.0f,
+    .thread_sleep_ms = DEFAULT_THREAD_SLEEP_MS,
+};
+
+static int ykb_backlight_load_default_scripts(void) {
+    memcpy(&script_slots, default_script_slots, sizeof(script_slots));
+    scripts_loaded = true;
+    return 0;
+}
+
+static int ykb_backlight_script_handler_set(const char *key, size_t len,
+                                            settings_read_cb read_cb,
+                                            void *cb_arg) {
+    if (strcmp(key, YKB_BACKLIGHT_SETTINGS_ITEM) != 0) {
+        return -ENOENT;
+    }
+
+    if (len != sizeof(load_img)) {
+        LOG_ERR("Backlight script image size mismatch: got %zu, want %zu", len,
+                sizeof(load_img));
+        return -EINVAL;
+    }
+
+    ssize_t rlen = read_cb(cb_arg, &load_img, sizeof(load_img));
+    if (rlen < 0) {
+        LOG_ERR("Backlight script read_cb error: %d", (int)rlen);
+        return -EINVAL;
+    }
+
+    if ((size_t)rlen != sizeof(load_img)) {
+        LOG_ERR("Backlight script image truncated: %zd", rlen);
+        return -EINVAL;
+    }
+
+    if (load_img.version != YKB_BACKLIGHT_SCRIPT_IMAGE_VERSION) {
+        LOG_ERR("Backlight script image version mismatch: got %u, want %u",
+                load_img.version, YKB_BACKLIGHT_SCRIPT_IMAGE_VERSION);
+        return -EINVAL;
+    }
+
+    k_mutex_lock(&ykb_bl_mut, K_FOREVER);
+    memcpy(&script_slots, &load_img.slots, sizeof(script_slots));
+    scripts_loaded = true;
+    k_mutex_unlock(&ykb_bl_mut);
+
+    return 0;
+}
+
+static int ykb_backlight_script_handler_export(
+    int (*export_func)(const char *name, const void *val, size_t val_len)) {
+    save_img = (ykb_backlight_script_image_t){
+        .version = YKB_BACKLIGHT_SCRIPT_IMAGE_VERSION,
+    };
+
+    k_mutex_lock(&ykb_bl_mut, K_FOREVER);
+    memcpy(&save_img.slots, &script_slots, sizeof(script_slots));
+    k_mutex_unlock(&ykb_bl_mut);
+
+    return export_func(YKB_BACKLIGHT_SETTINGS_ITEM, &save_img, sizeof(save_img));
+}
+
+static struct settings_handler ykb_backlight_script_handler = {
+    .name = YKB_BACKLIGHT_SETTINGS_NS,
+    .h_set = ykb_backlight_script_handler_set,
+    .h_export = ykb_backlight_script_handler_export,
+};
+
+__weak void ykb_backlight_on_script_slot_update(uint16_t slot) {}
+
+static void ykb_backlight_save_scripts(void) {
+    if (!scripts_registered) {
+        LOG_WRN("Attempt to save backlight scripts before settings registration");
+        return;
+    }
+
+    save_img = (ykb_backlight_script_image_t){
+        .version = YKB_BACKLIGHT_SCRIPT_IMAGE_VERSION,
+    };
+
+    memcpy(&save_img.slots, &script_slots, sizeof(script_slots));
+    int err =
+        settings_save_one(YKB_BACKLIGHT_SETTINGS_KEY, &save_img, sizeof(save_img));
+    if (err) {
+        LOG_WRN("Could not save backlight scripts: %d", err);
+        return;
+    }
+
+    LOG_INF("Backlight scripts saved.");
+}
 
 static inline uint8_t apply_brightness(uint8_t color) {
     double result =
@@ -168,6 +283,9 @@ KSCAN_CB_DEFINE(ykb_backlight) = {
 static bool init_success = false;
 
 static void on_settings_update(const kb_settings_t *settings) {
+    const ykb_backlight_script_slot_t *slot;
+    uint16_t cur_idx;
+    int err;
 
     k_mutex_lock(&ykb_bl_mut, K_FOREVER);
 
@@ -185,32 +303,34 @@ static void on_settings_update(const kb_settings_t *settings) {
     cur_brightness = settings->backlight.brightness;
     on = settings->backlight.on;
 
-    uint16_t cur_idx = settings->backlight.active_script_index;
-    if (cur_idx >= settings->backlight.script_amount) {
-        LOG_ERR("Active script index is out of bounds (%d >= %d)!", cur_idx,
-                settings->backlight.script_amount);
+    cur_idx = settings->backlight.active_script_index;
+    if (cur_idx >= ARRAY_SIZE(script_slots.slots)) {
+        LOG_ERR("Active script index is out of bounds (%u >= %u)", cur_idx,
+                (unsigned int)ARRAY_SIZE(script_slots.slots));
         goto defer;
     }
-    uint32_t start_offset = settings->backlight.offsets[cur_idx];
-    uint32_t end_offset = settings->backlight.offsets[cur_idx + 1];
 
-    const char *script_name = settings->backlight.names[cur_idx];
-    LOG_INF("Loading lumiscript '%s'", script_name);
-    int err = lumiscript_load(&settings->backlight.backlight_data[start_offset],
-                              end_offset - start_offset);
+    slot = &script_slots.slots[cur_idx];
+    if (!slot->occupied || slot->size == 0) {
+        LOG_WRN("Backlight slot %u is empty", cur_idx);
+        goto defer;
+    }
+
+    LOG_INF("Loading lumiscript slot %u '%s'", cur_idx, slot->name);
+    err = lumiscript_load(slot->bytecode, slot->size);
     if (err) {
-        LOG_ERR("Unable to load lumiscript '%s' (%d)", script_name, err);
+        LOG_ERR("Unable to load lumiscript '%s' (%d)", slot->name, err);
         goto defer;
     }
 
     err = lumiscript_run_init();
     if (err) {
-        LOG_ERR("Unable to run lumiscript '%s' init (%d)", script_name, err);
+        LOG_ERR("Unable to run lumiscript '%s' init (%d)", slot->name, err);
         goto defer;
     }
 
     script_loaded = true;
-    LOG_INF("Successfully loaded lumiscript '%s'", script_name);
+    LOG_INF("Successfully loaded lumiscript slot %u '%s'", cur_idx, slot->name);
 
 defer:
     k_mutex_unlock(&ykb_bl_mut);
@@ -219,6 +339,7 @@ defer:
 ON_SETTINGS_UPDATE_DEFINE(ykb_backlight, on_settings_update);
 
 static int ykb_backlight_init(void) {
+    int err;
 
     k_mutex_lock(&ykb_bl_mut, K_FOREVER);
 
@@ -264,6 +385,38 @@ static int ykb_backlight_init(void) {
         }
     }
 
+    if (!scripts_registered) {
+        err = settings_subsys_init();
+        if (err) {
+            LOG_ERR("settings_subsys_init: %d", err);
+            k_mutex_unlock(&ykb_bl_mut);
+            return err;
+        }
+
+        err = settings_register(&ykb_backlight_script_handler);
+        if (err) {
+            LOG_ERR("settings_register(backlight): %d", err);
+            k_mutex_unlock(&ykb_bl_mut);
+            return err;
+        }
+
+        scripts_registered = true;
+    }
+
+    scripts_loaded = false;
+    err = settings_load_subtree(YKB_BACKLIGHT_SETTINGS_NS);
+    if (err || !scripts_loaded) {
+        LOG_WRN("No valid backlight script storage found (err %d). Loading defaults.",
+                err);
+        err = ykb_backlight_load_default_scripts();
+        if (err) {
+            LOG_ERR("ykb_backlight_load_default_scripts: %d", err);
+            k_mutex_unlock(&ykb_bl_mut);
+            return err;
+        }
+        ykb_backlight_save_scripts();
+    }
+
     k_thread_create(&ykb_backlight_thread, ykb_backlight_thread_stack,
                     K_THREAD_STACK_SIZEOF(ykb_backlight_thread_stack),
                     ykb_backlight_thread_handler, NULL, NULL, NULL,
@@ -282,4 +435,97 @@ SYS_INIT(ykb_backlight_init, POST_KERNEL, CONFIG_YKB_BL_INIT_PRIORITY);
 
 const ykb_backlight_settings_t *ykb_backlight_get_default_settings() {
     return &default_backlight_settings;
+}
+
+const ykb_backlight_script_slots_t *ykb_backlight_get_default_script_slots(void) {
+    return default_script_slots;
+}
+
+size_t ykb_backlight_get_script_slot_count(void) {
+    return ARRAY_SIZE(script_slots.slots);
+}
+
+int ykb_backlight_get_script_slot(uint16_t slot, ykb_backlight_script_slot_t *out) {
+    if (!out) {
+        return -EINVAL;
+    }
+
+    if (slot >= ARRAY_SIZE(script_slots.slots)) {
+        return -ERANGE;
+    }
+
+    k_mutex_lock(&ykb_bl_mut, K_FOREVER);
+    memcpy(out, &script_slots.slots[slot], sizeof(*out));
+    k_mutex_unlock(&ykb_bl_mut);
+
+    return 0;
+}
+
+int ykb_backlight_get_script_slot_crc32(uint16_t slot, uint32_t *out_crc32) {
+    ykb_backlight_script_slot_t slot_data;
+    uint32_t crc = 0;
+    size_t name_len;
+
+    if (!out_crc32) {
+        return -EINVAL;
+    }
+
+    if (slot >= ARRAY_SIZE(script_slots.slots)) {
+        return -ERANGE;
+    }
+
+    k_mutex_lock(&ykb_bl_mut, K_FOREVER);
+    memcpy(&slot_data, &script_slots.slots[slot], sizeof(slot_data));
+    k_mutex_unlock(&ykb_bl_mut);
+
+    crc = crc32_ieee_update(crc, (const uint8_t *)&slot_data.occupied,
+                            sizeof(slot_data.occupied));
+    crc = crc32_ieee_update(crc, (const uint8_t *)&slot_data.size,
+                            sizeof(slot_data.size));
+
+    name_len = strnlen(slot_data.name, sizeof(slot_data.name));
+    crc = crc32_ieee_update(crc, (const uint8_t *)slot_data.name, name_len);
+
+    if (slot_data.occupied && slot_data.size > 0) {
+        crc = crc32_ieee_update(crc, slot_data.bytecode, slot_data.size);
+    }
+
+    *out_crc32 = crc;
+    return 0;
+}
+
+int ykb_backlight_set_script_slot(uint16_t slot,
+                                  const ykb_backlight_script_slot_t *in) {
+    kb_settings_t settings_snapshot;
+    bool reload_active = false;
+
+    if (!in) {
+        return -EINVAL;
+    }
+
+    if (slot >= ARRAY_SIZE(script_slots.slots)) {
+        return -ERANGE;
+    }
+
+    if (in->size > CONFIG_YKB_BL_SCRIPT_SLOT_SIZE) {
+        return -EMSGSIZE;
+    }
+
+    if (kb_settings_get(&settings_snapshot) == 0) {
+        reload_active = settings_snapshot.backlight.active_script_index == slot;
+    }
+
+    k_mutex_lock(&ykb_bl_mut, K_FOREVER);
+    memcpy(&script_slots.slots[slot], in, sizeof(*in));
+    k_mutex_unlock(&ykb_bl_mut);
+
+    ykb_backlight_save_scripts();
+
+    if (reload_active) {
+        on_settings_update(&settings_snapshot);
+    }
+
+    ykb_backlight_on_script_slot_update(slot);
+
+    return 0;
 }

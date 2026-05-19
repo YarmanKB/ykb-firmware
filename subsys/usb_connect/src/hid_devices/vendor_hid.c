@@ -8,10 +8,9 @@
 
 LOG_MODULE_DECLARE(usb_connect, CONFIG_USB_CONNECT_LOG_LEVEL);
 
-#define CUSTOM_IN_REPORT_SIZE (CONFIG_USB_CONNECT_MAX_VENDOR_IN_REPORT_SIZE - 1)
-#define CUSTOM_OUT_REPORT_SIZE                                                 \
-    (CONFIG_USB_CONNECT_MAX_VENDOR_OUT_REPORT_SIZE - 1)
-#define CUSTOM_FEATURE_SIZE (CONFIG_USB_CONNECT_MAX_VENDOR_IN_REPORT_SIZE - 1)
+#define CUSTOM_IN_REPORT_SIZE (CONFIG_USB_CONNECT_MAX_VENDOR_IN_REPORT_SIZE)
+#define CUSTOM_OUT_REPORT_SIZE (CONFIG_USB_CONNECT_MAX_VENDOR_OUT_REPORT_SIZE)
+#define CUSTOM_FEATURE_SIZE (CONFIG_USB_CONNECT_MAX_VENDOR_IN_REPORT_SIZE)
 
 #define YKB_PROTOCOL_DATA_LENGTH                                               \
     (MIN(CUSTOM_IN_REPORT_SIZE, CUSTOM_OUT_REPORT_SIZE) - 6)
@@ -57,7 +56,14 @@ static int usb_vendor_send_packet(const uint8_t *data, size_t len,
                                   void *user_data) {
     ARG_UNUSED(user_data);
 
-    int err = hid_device_submit_report(hid_vendor_dev, len, data);
+    uint8_t report[CONFIG_USB_CONNECT_MAX_VENDOR_IN_REPORT_SIZE] = {0};
+    if (len > sizeof(report)) {
+        return -EMSGSIZE;
+    }
+
+    memcpy(report, data, len);
+
+    int err = hid_device_submit_report(hid_vendor_dev, sizeof(report), report);
     if (err) {
         LOG_ERR("hid_device_submit_report (vendor): %d", err);
     }

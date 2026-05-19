@@ -2,6 +2,8 @@
 
 #include "splitlink_bt.h"
 
+#include <zephyr/bluetooth/gap.h>
+
 LOG_MODULE_REGISTER(splitlink_bt_peripheral, CONFIG_SPLITLINK_LOG_LEVEL);
 
 static const struct bt_uuid_128 splitlink_bt_svc_uuid =
@@ -10,6 +12,10 @@ static const struct bt_uuid_128 splitlink_bt_tx_uuid =
     BT_UUID_INIT_128(SPLITLINK_BT_UUID_TX_VAL);
 static const struct bt_uuid_128 splitlink_bt_rx_uuid =
     BT_UUID_INIT_128(SPLITLINK_BT_UUID_RX_VAL);
+static const struct bt_le_conn_param *splitlink_bt_conn_params =
+    BT_LE_CONN_PARAM(BT_GAP_MS_TO_CONN_INTERVAL(7.5),
+                     BT_GAP_MS_TO_CONN_INTERVAL(7.5), 0,
+                     BT_GAP_MS_TO_CONN_TIMEOUT(4000));
 
 static const struct bt_data splitlink_bt_ad[] = {
     BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
@@ -125,6 +131,29 @@ static void splitlink_bt_connected(struct bt_conn *conn, uint8_t err) {
 
     dev_data->conn = bt_conn_ref(conn);
     LOG_INF("Splitlink BT peripheral connected");
+
+    int conn_param_err = bt_conn_le_param_update(conn, splitlink_bt_conn_params);
+    if (conn_param_err && conn_param_err != -EALREADY) {
+        LOG_WRN("Splitlink BT peripheral conn param update failed (%d)",
+                conn_param_err);
+    } else {
+        LOG_INF("Splitlink BT peripheral conn param update requested");
+    }
+
+    int phy_err = bt_conn_le_phy_update(conn, BT_CONN_LE_PHY_PARAM_2M);
+    if (phy_err && phy_err != -EALREADY) {
+        LOG_WRN("Splitlink BT peripheral PHY update failed (%d)", phy_err);
+    } else {
+        LOG_INF("Splitlink BT peripheral PHY 2M update requested");
+    }
+
+    int data_len_err = bt_conn_le_data_len_update(conn, BT_LE_DATA_LEN_PARAM_MAX);
+    if (data_len_err && data_len_err != -EALREADY) {
+        LOG_WRN("Splitlink BT peripheral data len update failed (%d)",
+                data_len_err);
+    } else {
+        LOG_INF("Splitlink BT peripheral data len update requested");
+    }
 }
 
 static void splitlink_bt_disconnected(struct bt_conn *conn, uint8_t reason) {
