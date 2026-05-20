@@ -1,4 +1,7 @@
 #include <subsys/kb_handler_internal_api.h>
+#if CONFIG_BT_CONNECT
+#include <subsys/bt_connect.h>
+#endif
 #include <subsys/splitlink_sync.h>
 
 #include <zephyr/kernel.h>
@@ -60,6 +63,9 @@ void splitlink_sync_on_connect() {
 void splitlink_sync_on_disconnect() {
     LOG_WRN("SplitLink slave disconnected");
     kb_handler_core_handle_slave_reset();
+#if CONFIG_BT_CONNECT
+    bt_connect_clear_secondary_battery_state();
+#endif
 }
 
 void splitlink_sync_on_settings_update(const kb_settings_t *settings) {
@@ -82,6 +88,22 @@ void splitlink_sync_scripts_request_received(
 
 void splitlink_sync_on_script_slot_update(uint16_t slot) {
     splitlink_sync_queue_script_slot_sync(slot);
+}
+
+void splitlink_sync_battery_state_received(const splitlink_battery_state_t *state) {
+#if CONFIG_BT_CONNECT
+    ykb_battsense_state_t slave_state = {0};
+
+    if (!state) {
+        return;
+    }
+
+    slave_state.percentage = state->percentage;
+    slave_state.charge_status = (enum charger_status)state->charge_status;
+    bt_connect_set_secondary_battery_state(&slave_state);
+#else
+    ARG_UNUSED(state);
+#endif
 }
 
 int splitlink_sync_master_attach_kb_handler(void) {

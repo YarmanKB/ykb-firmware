@@ -3,7 +3,6 @@ menuconfig BT_CONNECT
     select BT
     select BT_SMP
     select BT_PERIPHERAL
-    select BT_BAS
     select BT_HIDS
     select BT_CONN_CTX
     select BT_DIS
@@ -48,6 +47,10 @@ if BT_CONNECT
         bool "Enable Bluetooth vendor transport"
         default y
         select VENDOR_HID
+
+    config BT_CONNECT_SPLIT_BAS
+        bool "Enable secondary BAS for split keyboard slave battery"
+        default y if SPLITLINK_SYNC_MASTER
 
     configdefault BT_MAX_CONN
         default 1

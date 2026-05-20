@@ -58,6 +58,7 @@ static atomic_bool connected;
 #define SCRIPT_MANIFEST_SLOT_ID 4U
 #define SCRIPT_REQUEST_SLOT_ID 5U
 #define SCRIPT_SLOT_SLOT_ID 6U
+#define BATTERY_SLOT_ID 7U
 
 #if CONFIG_SPLITLINK_BENCHMARK
 struct splitlink_benchmark_payload {
@@ -104,6 +105,7 @@ static uint64_t benchmark_total_us;
 #if CONFIG_SPLITLINK_SYNC_SLAVE
 TX_SLOT(values, sizeof(uint16_t) * CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE,
         VALUES_SLOT_ID);
+TX_SLOT(battery, sizeof(splitlink_battery_state_t), BATTERY_SLOT_ID);
 RX_SLOT(settings, sizeof(kb_settings_t), SETTINGS_SLOT_ID);
 RX_SLOT(scripts_manifest, sizeof(splitlink_script_manifest_t),
         SCRIPT_MANIFEST_SLOT_ID);
@@ -117,11 +119,14 @@ static uint8_t pending_values_tx_data[sizeof(uint16_t) *
                                       CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE];
 static uint16_t pending_values_tx_len;
 static bool pending_values_tx_ready;
+static splitlink_battery_state_t pending_battery_tx_state;
+static bool pending_battery_tx_ready;
 #endif // CONFIG_SPLITLINK_SYNC_SLAVE
 
 #if CONFIG_SPLITLINK_SYNC_MASTER
 RX_SLOT(values, sizeof(uint16_t) * CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE,
         VALUES_SLOT_ID);
+RX_SLOT(battery, sizeof(splitlink_battery_state_t), BATTERY_SLOT_ID);
 TX_SLOT(settings, sizeof(kb_settings_t), SETTINGS_SLOT_ID);
 TX_SLOT(scripts_manifest, sizeof(splitlink_script_manifest_t),
         SCRIPT_MANIFEST_SLOT_ID);
@@ -294,6 +299,14 @@ void rx_slot_work_handler(struct k_work *work) {
         splitlink_sync_values_received(values, total_len / sizeof(uint16_t));
         return;
     }
+    if (slot->id == BATTERY_SLOT_ID) {
+        const splitlink_battery_state_t *state =
+            (const splitlink_battery_state_t *)slot->data;
+        splitlink_sync_battery_state_received(state);
+        ykb_protocol_rx_reset(&slot->rx);
+        slot->state = RX_SLOT_EMPTY;
+        return;
+    }
     if (slot->id == SCRIPT_REQUEST_SLOT_ID) {
         const splitlink_script_request_t *request =
             (const splitlink_script_request_t *)slot->data;
@@ -402,6 +415,13 @@ out:
         (void)k_work_reschedule(&slot->work, K_NO_WAIT);
         return;
     }
+    if (slot->id == BATTERY_SLOT_ID && pending_battery_tx_ready &&
+        slot->state == TX_SLOT_EMPTY) {
+        (void)tx_slot_begin_transfer(slot, &pending_battery_tx_state,
+                                     sizeof(pending_battery_tx_state));
+        pending_battery_tx_ready = false;
+        return;
+    }
 #endif // CONFIG_SPLITLINK_SYNC_SLAVE
 
 #if CONFIG_SPLITLINK_SYNC_MASTER
@@ -474,6 +494,14 @@ static void on_receive_cb(uint8_t *data, size_t data_len) {
         LOG_ERR("Settings RX is not supported on splitlink master");
         return;
 #endif // CONFIG_SPLITLINK_SYNC_SLAVE
+    case BATTERY_SLOT_ID:
+#if CONFIG_SPLITLINK_SYNC_MASTER
+        slot = &battery_rx_slot;
+        break;
+#else
+        LOG_ERR("Battery RX is not supported on splitlink slave");
+        return;
+#endif // CONFIG_SPLITLINK_SYNC_MASTER
     case SCRIPT_MANIFEST_SLOT_ID:
 #if CONFIG_SPLITLINK_SYNC_SLAVE
         slot = &scripts_manifest_rx_slot;
@@ -558,6 +586,24 @@ void splitlink_sync_send_values(uint16_t *values, uint16_t count) {
     }
 
     (void)tx_slot_begin_transfer(slot, values, size_bytes);
+}
+#endif // CONFIG_SPLITLINK_SYNC_SLAVE
+
+#if CONFIG_SPLITLINK_SYNC_SLAVE
+void splitlink_sync_send_battery_state(const splitlink_battery_state_t *state) {
+    struct tx_slot *slot = &battery_tx_slot;
+
+    if (!state || !splitlink_connected()) {
+        return;
+    }
+
+    if (slot->state == TX_SLOT_TRANSCEIVING) {
+        pending_battery_tx_state = *state;
+        pending_battery_tx_ready = true;
+        return;
+    }
+
+    (void)tx_slot_begin_transfer(slot, state, sizeof(*state));
 }
 #endif // CONFIG_SPLITLINK_SYNC_SLAVE
 
@@ -674,6 +720,7 @@ int splitlink_sync_init(void) {
 
 #if CONFIG_SPLITLINK_SYNC_MASTER
     k_work_init(&values_rx_slot.work, rx_slot_work_handler);
+    k_work_init(&battery_rx_slot.work, rx_slot_work_handler);
     k_work_init_delayable(&settings_tx_slot.work, tx_slot_work_handler);
     k_work_init_delayable(&scripts_manifest_tx_slot.work, tx_slot_work_handler);
     k_work_init(&scripts_request_rx_slot.work, rx_slot_work_handler);
@@ -683,11 +730,13 @@ int splitlink_sync_init(void) {
 #if CONFIG_SPLITLINK_SYNC_SLAVE
     k_work_init(&settings_rx_slot.work, rx_slot_work_handler);
     k_work_init_delayable(&values_tx_slot.work, tx_slot_work_handler);
+    k_work_init_delayable(&battery_tx_slot.work, tx_slot_work_handler);
     k_work_init(&scripts_manifest_rx_slot.work, rx_slot_work_handler);
     k_work_init_delayable(&scripts_request_tx_slot.work, tx_slot_work_handler);
     k_work_init(&script_slot_rx_slot.work, rx_slot_work_handler);
     pending_values_tx_len = 0;
     pending_values_tx_ready = false;
+    pending_battery_tx_ready = false;
 #endif // CONFIG_SPLITLINK_SYNC_SLAVE
 
 #if CONFIG_SPLITLINK_BENCHMARK && CONFIG_SPLITLINK_SYNC_MASTER

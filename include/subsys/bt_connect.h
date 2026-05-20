@@ -2,6 +2,7 @@
 #define LIB_BT_CONNECT_H
 
 #include <subsys/usb_connect.h>
+#include <subsys/ykb_battsense.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/sys/iterable_sections.h>
@@ -22,5 +23,8 @@ bool bt_connect_can_send_kb_report(void);
 bool bt_connect_can_send_mouse_report(void);
 
 void bt_connect_set_battery_level(uint8_t percentage);
+void bt_connect_set_secondary_battery_state(
+    const ykb_battsense_state_t *state);
+void bt_connect_clear_secondary_battery_state(void);
 
 #endif // LIB_BT_CONNECT_H

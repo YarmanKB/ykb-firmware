@@ -1,5 +1,6 @@
 #include <subsys/kb_handler_internal_api.h>
 #include <subsys/splitlink_sync.h>
+#include <subsys/ykb_battsense.h>
 
 #include <stdatomic.h>
 #include <zephyr/kernel.h>
@@ -12,6 +13,7 @@ BUILD_ASSERT(CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE > 0,
              "SPLITLINK_SYNC_SLAVE requires kb-handler-key-count-slave");
 
 static uint16_t values[CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE] = {0};
+static splitlink_battery_state_t battery_state = {0};
 
 static void send_values_work_handler(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(send_values_work, send_values_work_handler);
@@ -45,6 +47,20 @@ static void on_event(uint16_t idx, bool pressed) {
 
     values[idx] = pressed;
 }
+
+static void on_battery_state_changed(ykb_battsense_state_t state) {
+    battery_state.percentage = state.percentage;
+    battery_state.charge_status = (uint8_t)state.charge_status;
+    splitlink_sync_send_battery_state(&battery_state);
+}
+
+#if CONFIG_YKB_BATTSENSE
+static YKB_BATTSENSE_DEFINE(splitlink_sync_slave_battery_transport) = {
+    .on_state_changed = on_battery_state_changed,
+    .on_low_percentage = on_battery_state_changed,
+    .on_critical_percentage = on_battery_state_changed,
+};
+#endif
 
 void splitlink_sync_settings_received(const kb_settings_t *settings) {
     int err = kb_settings_apply(settings);
@@ -113,13 +129,22 @@ void splitlink_sync_script_slot_received(
 }
 
 void splitlink_sync_on_connect() {
-    //
     LOG_INF("SplitLink connected");
+
+#if CONFIG_YKB_BATTSENSE
+    ykb_battsense_state_t state = {0};
+    if (!ykb_battsense_get_state(&state)) {
+        on_battery_state_changed(state);
+    }
+#endif
 }
 
 void splitlink_sync_on_disconnect() {
-    //
     LOG_INF("SplitLink disconnected");
+}
+
+void splitlink_sync_battery_state_received(const splitlink_battery_state_t *state) {
+    ARG_UNUSED(state);
 }
 
 int splitlink_sync_slave_attach_kb_handler(void) {
