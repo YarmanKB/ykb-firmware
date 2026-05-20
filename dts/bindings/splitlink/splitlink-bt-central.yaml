@@ -1,9 +1,0 @@
-title: Splitlink over Bluetooth driver (central role)
-
-description: >
-  A binding for Splitlink over a custom Bluetooth GATT transport, acting as the
-  central/client side of the link.
-
-compatible: "splitlink-bt-central"
-
-include: splitlink-bt.yaml

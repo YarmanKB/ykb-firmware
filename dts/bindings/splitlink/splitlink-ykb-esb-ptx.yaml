@@ -1,8 +1,0 @@
-title: Splitlink over YKB ESB driver (PTX role)
-
-description: >
-  A binding for Splitlink connection using YKB ESB library (PTX transmitting role).
-
-compatible: "splitlink-ykb-esb-ptx"
-
-include: splitlink-ykb-esb.yaml
