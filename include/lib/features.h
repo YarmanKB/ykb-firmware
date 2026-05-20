@@ -44,6 +44,8 @@ typedef struct __packed {
     const bool splitlink : 1;
     const bool ykb_backlight : 1;
     const bool ykb_battsense : 1;
+    const bool ykb_battsense_pw_cutoff_present : 1;
+    const bool ykb_battsense_pw_cutoff_on_failure : 1;
     const bool bt_connect_kbd : 1;
     const bool bt_connect_mouse : 1;
     const bool bt_connect_vendor : 1;
@@ -69,6 +71,7 @@ typedef struct __packed {
         .key_count = CONFIG_KB_SETTINGS_KEY_COUNT,                             \
         FEATURE_DEP(key_count_slave, CONFIG_SPLITLINK_SYNC,                    \
                     CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE),                       \
+        .kb_fn_shortcuts_max = CONFIG_KB_SETTINGS_FN_SHORTCUTS_MAX,            \
                                                                                \
         FEATURE(splitlink, CONFIG_SPLITLINK),                                  \
                                                                                \
@@ -92,9 +95,12 @@ typedef struct __packed {
                     CONFIG_YKB_BL_SCRIPT_SLOT_SIZE),                           \
         FEATURE_DEP(ykb_backlight_script_name_max_len, CONFIG_YKB_BACKLIGHT,   \
                     CONFIG_YKB_BL_SCRIPT_NAME_MAX_LEN),                        \
-        .kb_fn_shortcuts_max = CONFIG_KB_SETTINGS_FN_SHORTCUTS_MAX,           \
                                                                                \
         FEATURE(ykb_battsense, CONFIG_YKB_BATTSENSE),                          \
+        FEATURE(ykb_battsense_pw_cutoff_present,                               \
+                CONFIG_YKB_BATTSENSE_PW_CUTOFF_PRESENT),                       \
+        FEATURE(ykb_battsense_pw_cutoff_on_failure,                            \
+                CONFIG_YKB_BATTSENSE_SHUTOFF_ON_CHARGER_FAILURE),              \
                                                                                \
         FEATURE(bt_connect_kbd, CONFIG_BT_CONNECT_KBD),                        \
         FEATURE(bt_connect_mouse, CONFIG_BT_CONNECT_MOUSE),                    \
