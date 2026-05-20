@@ -3,6 +3,8 @@
 
 #include <subsys/splitlink.h>
 
+#include "generated_splitlink_bt_identity.h"
+
 #include <errno.h>
 #include <string.h>
 
@@ -13,12 +15,9 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
-#define SPLITLINK_BT_UUID_SVC_VAL                                              \
-    BT_UUID_128_ENCODE(0x69d61ea1, 0xd68f, 0x49cc, 0x9f6a, 0x4a4aeb7e1000)
-#define SPLITLINK_BT_UUID_TX_VAL                                               \
-    BT_UUID_128_ENCODE(0x69d61ea1, 0xd68f, 0x49cc, 0x9f6a, 0x4a4aeb7e1001)
-#define SPLITLINK_BT_UUID_RX_VAL                                               \
-    BT_UUID_128_ENCODE(0x69d61ea1, 0xd68f, 0x49cc, 0x9f6a, 0x4a4aeb7e1002)
+#define SPLITLINK_BT_UUID_SVC_VAL GENERATED_SPLITLINK_BT_UUID_SVC_VAL
+#define SPLITLINK_BT_UUID_TX_VAL GENERATED_SPLITLINK_BT_UUID_TX_VAL
+#define SPLITLINK_BT_UUID_RX_VAL GENERATED_SPLITLINK_BT_UUID_RX_VAL
 
 struct splitlink_bt_rx_packet {
     uint8_t len;
