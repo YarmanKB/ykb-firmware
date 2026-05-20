@@ -1,4 +1,4 @@
-#include "kb_handler_internal.h"
+#include "kb_handler_private.h"
 
 #include "generated_kb_handler_layout.h"
 

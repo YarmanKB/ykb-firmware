@@ -29,10 +29,6 @@
 
 		zephyr,bt-hci = &bt_hci_ipc0;
 	};
-
-	splitlink: splitlink {
-	};
-
 	buttons {
 		compatible = "gpio-keys";
 		button0: button0 {

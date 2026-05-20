@@ -148,7 +148,17 @@ static struct settings_handler ykb_backlight_script_handler = {
     .h_export = ykb_backlight_script_handler_export,
 };
 
-__weak void ykb_backlight_on_script_slot_update(uint16_t slot) {}
+static ykb_backlight_script_slot_update_cb_t script_slot_update_cb;
+
+int ykb_backlight_register_script_slot_update_cb(
+    ykb_backlight_script_slot_update_cb_t cb) {
+    if (script_slot_update_cb && script_slot_update_cb != cb) {
+        return -EALREADY;
+    }
+
+    script_slot_update_cb = cb;
+    return 0;
+}
 
 static void ykb_backlight_save_scripts(void) {
     if (!scripts_registered) {
@@ -525,7 +535,9 @@ int ykb_backlight_set_script_slot(uint16_t slot,
         on_settings_update(&settings_snapshot);
     }
 
-    ykb_backlight_on_script_slot_update(slot);
+    if (script_slot_update_cb) {
+        script_slot_update_cb(slot);
+    }
 
     return 0;
 }

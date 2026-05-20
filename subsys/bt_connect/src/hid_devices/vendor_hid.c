@@ -1,6 +1,6 @@
 #include "hid_devices.h"
 
-#include <lib/vendor_hid_protocol.h>
+#include <subsys/vendor_hid_protocol.h>
 
 #include <subsys/bt_connect.h>
 

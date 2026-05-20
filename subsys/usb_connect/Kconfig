@@ -61,19 +61,11 @@ if USB_CONNECT
         bool "Enable vendor HID device over USB (YKBConfigurator communication)"
         depends on $(dt_nodelabel_enabled_with_compat,hid_vendor,$(Z_HID_DEV))
         default y
+        select VENDOR_HID
 
     if USB_CONNECT_VENDOR
 
         HID_DEV_PATH := $(dt_nodelabel_path,hid_vendor)
-
-        choice USB_CONNECT_VENDOR_PROTOCOL_IMPL
-            prompt "Protocol implementation for vendor HID"
-            default USB_CONNECT_VENDOR_YKB_PROTOCOL
-
-            config USB_CONNECT_VENDOR_YKB_PROTOCOL
-                bool "Use YKB protocol"
-
-        endchoice # USB_CONNECT_VENDOR_PROTOCOL_IMPL
 
         config USB_CONNECT_MAX_VENDOR_IN_REPORT_SIZE
             int "In report packet size of vendor HID"

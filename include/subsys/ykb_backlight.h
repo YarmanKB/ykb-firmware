@@ -36,6 +36,8 @@ typedef struct {
     ykb_backlight_script_slot_t slots[CONFIG_YKB_BL_SCRIPT_SLOT_COUNT];
 } ykb_backlight_script_slots_t;
 
+typedef void (*ykb_backlight_script_slot_update_cb_t)(uint16_t slot);
+
 const ykb_backlight_layout_t *ykb_backlight_get_layout(void);
 
 const ykb_backlight_settings_t *ykb_backlight_get_default_settings(void);
@@ -47,5 +49,7 @@ int ykb_backlight_get_script_slot(uint16_t slot,
 int ykb_backlight_get_script_slot_crc32(uint16_t slot, uint32_t *out_crc32);
 int ykb_backlight_set_script_slot(uint16_t slot,
                                   const ykb_backlight_script_slot_t *in);
+int ykb_backlight_register_script_slot_update_cb(
+    ykb_backlight_script_slot_update_cb_t cb);
 
 #endif // YKB_BACKLIGHT_H

@@ -67,7 +67,7 @@ typedef struct __packed {
         .soc_name = CONFIG_SOC,                                                \
                                                                                \
         .key_count = CONFIG_KB_SETTINGS_KEY_COUNT,                             \
-        FEATURE_DEP(key_count_slave, CONFIG_KB_HANDLER_SPLITLINK,              \
+        FEATURE_DEP(key_count_slave, CONFIG_SPLITLINK_SYNC,                    \
                     CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE),                       \
                                                                                \
         FEATURE(splitlink, CONFIG_SPLITLINK),                                  \

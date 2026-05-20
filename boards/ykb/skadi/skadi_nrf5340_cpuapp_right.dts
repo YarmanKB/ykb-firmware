@@ -14,7 +14,3 @@
 		zephyr,sram-non-secure-partition = &sram0_ns;
 	};
 };
-
-&splitlink {
-	compatible = "splitlink-bt-peripheral";
-};

@@ -1,4 +1,4 @@
-#include "kb_handler_internal.h"
+#include "kb_handler_private.h"
 
 #include <subsys/bt_connect.h>
 #include <subsys/usb_connect.h>

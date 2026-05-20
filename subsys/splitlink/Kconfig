@@ -1,0 +1,42 @@
+menuconfig SPLITLINK
+    bool "Enable Splitlink"
+
+if SPLITLINK
+
+    choice SPLITLINK_TRANSPORT
+        prompt "Splitlink transport"
+        default SPLITLINK_BT
+
+        config SPLITLINK_BT
+            bool "Bluetooth"
+            select BT
+            select BT_CENTRAL if SPLITLINK_BT_CENTRAL
+            select BT_PERIPHERAL if SPLITLINK_BT_PERIPHERAL
+            select BT_GATT_CLIENT if SPLITLINK_BT_CENTRAL
+
+        config SPLITLINK_YKB_ESB
+            bool "ESB"
+            select LIB_YKB_ESB
+
+    endchoice
+
+    config SPLITLINK_SYNC
+        bool
+
+    config SPLITLINK_SYNC_MASTER
+        bool
+        depends on SPLITLINK_SYNC
+
+    config SPLITLINK_SYNC_SLAVE
+        bool
+        depends on SPLITLINK_SYNC
+
+    module = SPLITLINK
+    module-str = splitlink
+    source "subsys/logging/Kconfig.template.log_config"
+
+    rsource "Kconfig.sync"
+    rsource "Kconfig.bt"
+    rsource "Kconfig.ykb_esb"
+
+endif # SPLITLINK

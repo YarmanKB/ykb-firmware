@@ -1,6 +1,8 @@
 add_subdirectory_ifdef(CONFIG_KB_HANDLER kb_handler)
 add_subdirectory_ifdef(CONFIG_BT_CONNECT bt_connect)
 add_subdirectory_ifdef(CONFIG_KB_SETTINGS kb_settings)
+add_subdirectory_ifdef(CONFIG_SPLITLINK splitlink)
 add_subdirectory_ifdef(CONFIG_USB_CONNECT usb_connect)
+add_subdirectory_ifdef(CONFIG_VENDOR_HID vendor_hid)
 add_subdirectory_ifdef(CONFIG_YKB_BATTSENSE ykb_battsense)
 add_subdirectory_ifdef(CONFIG_YKB_BACKLIGHT ykb_backlight)

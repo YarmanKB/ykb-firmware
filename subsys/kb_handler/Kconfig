@@ -4,21 +4,20 @@ menuconfig KB_HANDLER
 
 if KB_HANDLER
 
-    config KB_HANDLER_SPLITLINK
-        bool
-
     choice KB_HANDLER_IMPL
         prompt "KB Handler implementation"
 
         config KB_HANDLER_SPLITLINK_MASTER
             bool "Splitlink (master)"
             select SPLITLINK
-            select KB_HANDLER_SPLITLINK
+            select SPLITLINK_SYNC
+            select SPLITLINK_SYNC_MASTER
 
         config KB_HANDLER_SPLITLINK_SLAVE
             bool "Splitlink (slave)"
             select SPLITLINK
-            select KB_HANDLER_SPLITLINK
+            select SPLITLINK_SYNC
+            select SPLITLINK_SYNC_SLAVE
 
         config KB_HANDLER_SIMPLE
             bool "Simple"
@@ -30,7 +29,6 @@ if KB_HANDLER
     source "subsys/logging/Kconfig.template.log_config"
 
     rsource "Kconfig.simple"
-    rsource "Kconfig.splitlink"
 
     config KB_HANDLER_INIT_PRIORITY
         int "Init priority"

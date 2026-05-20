@@ -72,14 +72,6 @@ if BOARD_SKADI_NRF5340_CPUAPP_LEFT || BOARD_SKADI_NRF5340_CPUAPP_RIGHT
 
     endif # BT_CONNECT
 
-    if KB_HANDLER_SPLITLINK_SLAVE
-        config BT_CONNECT
-            default n
-
-        config USB_CONNECT
-            default n
-    endif # KB_HANDLER_SPLITLINK_SLAVE
-
     if BOARD_SKADI_NRF5340_CPUAPP && TRUSTED_EXECUTION_SECURE
 
         config FLASH_LOAD_SIZE

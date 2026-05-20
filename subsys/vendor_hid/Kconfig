@@ -1,0 +1,15 @@
+config VENDOR_HID
+    bool
+
+if VENDOR_HID
+
+choice VENDOR_HID_PROTOCOL_IMPL
+    prompt "Vendor HID protocol implementation"
+    default VENDOR_HID_PROTOCOL_YKB
+
+    config VENDOR_HID_PROTOCOL_YKB
+        bool "Use YKB protocol"
+
+endchoice
+
+endif # VENDOR_HID

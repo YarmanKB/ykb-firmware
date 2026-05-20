@@ -1,4 +1,4 @@
-#include <drivers/splitlink_bt.h>
+#include <subsys/splitlink_bt.h>
 #include <subsys/bt_connect.h>
 
 #include "hid_devices/hid_devices.h"

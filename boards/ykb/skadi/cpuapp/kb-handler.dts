@@ -6,7 +6,6 @@
 
 	zephyr,user {
 		kb-handler-kscans = <&kscan1>;
-		kb-handler-splitlink = <&splitlink>;
 		kb-handler-key-count = <30>;
 		kb-handler-key-count-slave = <30>;
 

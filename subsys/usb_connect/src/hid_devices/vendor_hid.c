@@ -1,6 +1,6 @@
 #include "hid_devices.h"
 
-#include <lib/vendor_hid_protocol.h>
+#include <subsys/vendor_hid_protocol.h>
 #include <subsys/kb_handler.h>
 #include <subsys/usb_connect.h>
 

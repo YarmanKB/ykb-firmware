@@ -1,0 +1,42 @@
+if SPLITLINK_SYNC
+
+    choice SPLITLINK_SYNC_IMPL
+        prompt "Splitlink sync implementation"
+
+        config SPLITLINK_SYNC_IMPL_YKB_PROTO
+            bool "Splitlink sync over YKB protocol"
+
+    endchoice
+
+    if SPLITLINK_SYNC_IMPL_YKB_PROTO
+
+        config SPLITLINK_OUT_OF_ORDER_TRACK
+            bool "Enable out-of-order feature of YKB protocol"
+            default y if SPLITLINK_BT
+            default n
+
+        config SPLITLINK_BITMAP_LENGTH
+            int "Bitmap length for out-of-order feature"
+            depends on SPLITLINK_OUT_OF_ORDER_TRACK
+            default 32
+            range 1 256
+
+        config SPLITLINK_BENCHMARK
+            bool "Enable Splitlink RTT benchmark"
+            default n
+
+        config SPLITLINK_BENCHMARK_INTERVAL_MS
+            int "Splitlink RTT benchmark interval in ms"
+            depends on SPLITLINK_BENCHMARK
+            default 1000
+            range 1 60000
+
+        config SPLITLINK_BENCHMARK_PAYLOAD_SIZE
+            int "Splitlink RTT benchmark payload size"
+            depends on SPLITLINK_BENCHMARK
+            default 16
+            range 0 48
+
+    endif # SPLITLINK_SYNC_IMPL_YKB_PROTO
+
+endif # SPLITLINK_SYNC

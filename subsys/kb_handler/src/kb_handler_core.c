@@ -1,4 +1,4 @@
-#include "kb_handler_internal.h"
+#include "kb_handler_private.h"
 
 #include <dt-bindings/kb-handler/kb-key-codes.h>
 
@@ -20,6 +20,7 @@ static struct k_thread kbh_core_thread;
 static kb_settings_t settings_snapshot;
 static bool thread_started;
 static uint16_t values[TOTAL_KEY_COUNT];
+static kb_handler_settings_update_cb_t settings_update_cb;
 
 #define KBH_SLAVE_VALUES_CAPACITY                                              \
     ((KEY_COUNT_SLAVE > 0U) ? KEY_COUNT_SLAVE : 1U)
@@ -28,7 +29,7 @@ static struct k_spinlock slave_values_lock;
 static uint16_t latest_slave_values[KBH_SLAVE_VALUES_CAPACITY];
 static atomic_bool slave_values_msg_pending;
 
-#if CONFIG_KB_HANDLER_SPLITLINK_SLAVE
+#if CONFIG_SPLITLINK_SYNC_SLAVE
 #define KBH_LOCAL_SETTINGS_OFFSET KEY_COUNT
 #else
 #define KBH_LOCAL_SETTINGS_OFFSET 0U
@@ -1051,7 +1052,9 @@ static void kb_handler_on_settings_update(const kb_settings_t *settings) {
         }
     }
 
-    kb_handler_impl_after_settings_update(&settings_snapshot);
+    if (settings_update_cb) {
+        settings_update_cb(&settings_snapshot);
+    }
 
     if (thread_started && !from_core_thread) {
         k_thread_resume(&kbh_core_thread);
@@ -1071,9 +1074,13 @@ static void kb_handler_on_settings_update(const kb_settings_t *settings) {
 
 ON_SETTINGS_UPDATE_DEFINE(kbh_core, kb_handler_on_settings_update);
 
-__weak void
-kb_handler_impl_after_settings_update(const kb_settings_t *settings) {
-    ARG_UNUSED(settings);
+int kb_handler_register_settings_update_cb(kb_handler_settings_update_cb_t cb) {
+    if (settings_update_cb && settings_update_cb != cb) {
+        return -EALREADY;
+    }
+
+    settings_update_cb = cb;
+    return 0;
 }
 
 int kb_handler_core_init(void) {

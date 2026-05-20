@@ -1,0 +1,74 @@
+if SPLITLINK_BT
+
+choice SPLITLINK_BT_ROLE
+    prompt "Splitlink Bluetooth role"
+    default SPLITLINK_BT_CENTRAL if SPLITLINK_SYNC_MASTER
+    default SPLITLINK_BT_PERIPHERAL if SPLITLINK_SYNC_SLAVE
+
+config SPLITLINK_BT_CENTRAL
+    bool "Central"
+
+config SPLITLINK_BT_PERIPHERAL
+    bool "Peripheral"
+
+endchoice
+
+config SPLITLINK_BT_INIT_PRIORITY
+    int "Splitlink Bluetooth init priority"
+    default APPLICATION_INIT_PRIORITY
+
+config SPLITLINK_BT_PACKET_LENGTH
+    int "Splitlink Bluetooth packet length"
+    default 72
+    range 1 244
+
+config SPLITLINK_BT_RX_QUEUE_DEPTH
+    int "Splitlink Bluetooth RX queue depth"
+    default 8
+    range 1 32
+
+configdefault BT_MAX_CONN
+    default 2 if BT_CONNECT
+    default 1
+
+configdefault BT_MAX_PAIRED
+    default 2 if BT_CONNECT
+    default 1
+
+configdefault BT_L2CAP_TX_MTU
+    default 77
+
+configdefault BT_BUF_ACL_RX_SIZE
+    default 81
+
+configdefault BT_BUF_ACL_TX_SIZE
+    default 81
+
+configdefault BT_ATT_TX_COUNT
+    default 10
+
+configdefault BT_PERIPHERAL_PREF_MIN_INT
+    default 6
+
+configdefault BT_PERIPHERAL_PREF_MAX_INT
+    default 6
+
+configdefault BT_PERIPHERAL_PREF_LATENCY
+    default 0
+
+configdefault BT_PERIPHERAL_PREF_TIMEOUT
+    default 400
+
+configdefault BT_GATT_AUTO_UPDATE_MTU
+    default y
+
+configdefault BT_AUTO_DATA_LEN_UPDATE
+    default y
+
+configdefault BT_USER_PHY_UPDATE
+    default y
+
+configdefault BT_USER_DATA_LEN_UPDATE
+    default y
+
+endif # SPLITLINK_BT

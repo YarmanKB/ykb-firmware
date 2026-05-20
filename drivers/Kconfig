@@ -1,7 +1,6 @@
 menu "Drivers"
     rsource "kscan/Kconfig"
     rsource "mux/Kconfig"
-    rsource "splitlink/Kconfig"
 endmenu
 
 menu "Custom Zephyr Drivers"

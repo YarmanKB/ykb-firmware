@@ -47,19 +47,7 @@ if BT_CONNECT
     config BT_CONNECT_VENDOR
         bool "Enable Bluetooth vendor transport"
         default y
-
-    if BT_CONNECT_VENDOR
-
-        choice BT_CONNECT_VENDOR_PROTOCOL_IMPL
-            prompt "Protocol implementation for Bluetooth vendor HID"
-            default BT_CONNECT_VENDOR_YKB_PROTOCOL
-
-            config BT_CONNECT_VENDOR_YKB_PROTOCOL
-                bool "Use YKB protocol"
-
-        endchoice
-
-    endif # BT_CONNECT_VENDOR
+        select VENDOR_HID
 
     configdefault BT_MAX_CONN
         default 1
