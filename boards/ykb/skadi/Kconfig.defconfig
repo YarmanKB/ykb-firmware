@@ -64,6 +64,9 @@ if BOARD_SKADI_NRF5340_CPUAPP_LEFT || BOARD_SKADI_NRF5340_CPUAPP_RIGHT
         config BT_DEVICE_NAME
             default "YKB Skadi"
 
+        config BT_DIS_MODEL_NUMBER_STR
+            default "Skadi"
+
         config BT_DIS_PNP_PID
             default 0x0001
 
