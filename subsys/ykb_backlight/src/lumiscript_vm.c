@@ -112,7 +112,7 @@ defer:
     return err;
 }
 
-int lumiscript_run_init() {
+int lumiscript_run_init(void) {
     int err = 0;
     k_mutex_lock(&lumi_mut, K_FOREVER);
 
@@ -192,7 +192,7 @@ defer:
     return err;
 }
 
-int lumiscript_reset_state() {
+int lumiscript_reset_state(void) {
     int err = 0;
     k_mutex_lock(&lumi_mut, K_FOREVER);
 

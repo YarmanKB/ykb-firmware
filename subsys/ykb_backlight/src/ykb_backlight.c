@@ -9,6 +9,8 @@
 #include <drivers/kscan.h>
 
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <zephyr/drivers/led_strip.h>
 #include <zephyr/settings/settings.h>
@@ -20,9 +22,7 @@
 LOG_MODULE_REGISTER(ykb_backlight, CONFIG_YKB_BACKLIGHT_LOG_LEVEL);
 
 #define YKB_BACKLIGHT_SETTINGS_NS "ykb_bl"
-#define YKB_BACKLIGHT_SETTINGS_ITEM "scripts"
-#define YKB_BACKLIGHT_SETTINGS_KEY                                             \
-    YKB_BACKLIGHT_SETTINGS_NS "/" YKB_BACKLIGHT_SETTINGS_ITEM
+#define YKB_BACKLIGHT_SETTINGS_SLOT_PREFIX "slot_"
 #define YKB_BACKLIGHT_SCRIPT_IMAGE_VERSION 1U
 
 static const struct device *led_strip = Z_USER_DEV(ykb_backlight);
@@ -71,12 +71,10 @@ static struct led_rgb *buf_back = _buffer2;
 
 typedef struct {
     uint16_t version;
-    ykb_backlight_script_slots_t slots;
-} ykb_backlight_script_image_t;
+    ykb_backlight_script_slot_t slot;
+} ykb_backlight_script_slot_image_t;
 
 static ykb_backlight_script_slots_t script_slots;
-static ykb_backlight_script_image_t load_img;
-static ykb_backlight_script_image_t save_img;
 static const ykb_backlight_settings_t default_backlight_settings = {
     .on = true,
     .active_script_index = (CONFIG_YKB_BL_SCRIPT_SLOT_COUNT > 2) ? 2 : 0,
@@ -91,16 +89,79 @@ static int ykb_backlight_load_default_scripts(void) {
     return 0;
 }
 
+static int ykb_backlight_settings_slot_name(uint16_t slot, char *name,
+                                            size_t name_len) {
+    int written =
+        snprintf(name, name_len, YKB_BACKLIGHT_SETTINGS_SLOT_PREFIX "%u", slot);
+
+    if (written < 0 || (size_t)written >= name_len) {
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
+static int ykb_backlight_settings_slot_key(uint16_t slot, char *key,
+                                           size_t key_len) {
+    int written =
+        snprintf(key, key_len, "%s/" YKB_BACKLIGHT_SETTINGS_SLOT_PREFIX "%u",
+                 YKB_BACKLIGHT_SETTINGS_NS, slot);
+
+    if (written < 0 || (size_t)written >= key_len) {
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
+static int ykb_backlight_save_script_slot(uint16_t slot) {
+    char key[SETTINGS_FULL_NAME_LEN];
+    ykb_backlight_script_slot_image_t save_img = {
+        .version = YKB_BACKLIGHT_SCRIPT_IMAGE_VERSION,
+    };
+    int err;
+
+    if (slot >= ARRAY_SIZE(script_slots.slots)) {
+        return -ERANGE;
+    }
+
+    err = ykb_backlight_settings_slot_key(slot, key, sizeof(key));
+    if (err) {
+        return err;
+    }
+
+    memcpy(&save_img.slot, &script_slots.slots[slot], sizeof(save_img.slot));
+    return settings_save_one(key, &save_img, sizeof(save_img));
+}
+
 static int ykb_backlight_script_handler_set(const char *key, size_t len,
                                             settings_read_cb read_cb,
                                             void *cb_arg) {
-    if (strcmp(key, YKB_BACKLIGHT_SETTINGS_ITEM) != 0) {
+    const char *slot_key = key;
+    char *endptr = NULL;
+    unsigned long slot_idx_ul;
+    ykb_backlight_script_slot_image_t load_img;
+
+    if (strncmp(slot_key, YKB_BACKLIGHT_SETTINGS_SLOT_PREFIX,
+                strlen(YKB_BACKLIGHT_SETTINGS_SLOT_PREFIX)) != 0) {
         return -ENOENT;
     }
 
+    slot_key += strlen(YKB_BACKLIGHT_SETTINGS_SLOT_PREFIX);
+    if (*slot_key == '\0') {
+        return -EINVAL;
+    }
+
+    slot_idx_ul = strtoul(slot_key, &endptr, 10);
+    if (!endptr || *endptr != '\0' ||
+        slot_idx_ul >= ARRAY_SIZE(script_slots.slots)) {
+        LOG_ERR("Invalid backlight script slot key '%s'", key);
+        return -EINVAL;
+    }
+
     if (len != sizeof(load_img)) {
-        LOG_ERR("Backlight script image size mismatch: got %zu, want %zu", len,
-                sizeof(load_img));
+        LOG_ERR("Backlight script slot image size mismatch: got %zu, want %zu",
+                len, sizeof(load_img));
         return -EINVAL;
     }
 
@@ -111,7 +172,7 @@ static int ykb_backlight_script_handler_set(const char *key, size_t len,
     }
 
     if ((size_t)rlen != sizeof(load_img)) {
-        LOG_ERR("Backlight script image truncated: %zd", rlen);
+        LOG_ERR("Backlight script slot image truncated: %zd", rlen);
         return -EINVAL;
     }
 
@@ -122,7 +183,8 @@ static int ykb_backlight_script_handler_set(const char *key, size_t len,
     }
 
     k_mutex_lock(&ykb_bl_mut, K_FOREVER);
-    memcpy(&script_slots, &load_img.slots, sizeof(script_slots));
+    memcpy(&script_slots.slots[slot_idx_ul], &load_img.slot,
+           sizeof(load_img.slot));
     scripts_loaded = true;
     k_mutex_unlock(&ykb_bl_mut);
 
@@ -131,15 +193,30 @@ static int ykb_backlight_script_handler_set(const char *key, size_t len,
 
 static int ykb_backlight_script_handler_export(
     int (*export_func)(const char *name, const void *val, size_t val_len)) {
-    save_img = (ykb_backlight_script_image_t){
-        .version = YKB_BACKLIGHT_SCRIPT_IMAGE_VERSION,
-    };
+    int err = 0;
 
     k_mutex_lock(&ykb_bl_mut, K_FOREVER);
-    memcpy(&save_img.slots, &script_slots, sizeof(script_slots));
+    for (uint16_t slot = 0; slot < ARRAY_SIZE(script_slots.slots); ++slot) {
+        char name[SETTINGS_FULL_NAME_LEN];
+        ykb_backlight_script_slot_image_t save_img = {
+            .version = YKB_BACKLIGHT_SCRIPT_IMAGE_VERSION,
+        };
+
+        err = ykb_backlight_settings_slot_name(slot, name, sizeof(name));
+        if (err) {
+            break;
+        }
+
+        memcpy(&save_img.slot, &script_slots.slots[slot],
+               sizeof(save_img.slot));
+        err = export_func(name, &save_img, sizeof(save_img));
+        if (err) {
+            break;
+        }
+    }
     k_mutex_unlock(&ykb_bl_mut);
 
-    return export_func(YKB_BACKLIGHT_SETTINGS_ITEM, &save_img, sizeof(save_img));
+    return err;
 }
 
 static struct settings_handler ykb_backlight_script_handler = {
@@ -161,21 +238,20 @@ int ykb_backlight_register_script_slot_update_cb(
 }
 
 static void ykb_backlight_save_scripts(void) {
+    int err = 0;
+
     if (!scripts_registered) {
-        LOG_WRN("Attempt to save backlight scripts before settings registration");
+        LOG_WRN(
+            "Attempt to save backlight scripts before settings registration");
         return;
     }
 
-    save_img = (ykb_backlight_script_image_t){
-        .version = YKB_BACKLIGHT_SCRIPT_IMAGE_VERSION,
-    };
-
-    memcpy(&save_img.slots, &script_slots, sizeof(script_slots));
-    int err =
-        settings_save_one(YKB_BACKLIGHT_SETTINGS_KEY, &save_img, sizeof(save_img));
-    if (err) {
-        LOG_WRN("Could not save backlight scripts: %d", err);
-        return;
+    for (uint16_t slot = 0; slot < ARRAY_SIZE(script_slots.slots); ++slot) {
+        err = ykb_backlight_save_script_slot(slot);
+        if (err) {
+            LOG_WRN("Could not save backlight script slot %u: %d", slot, err);
+            return;
+        }
     }
 
     LOG_INF("Backlight scripts saved.");
@@ -414,9 +490,11 @@ static int ykb_backlight_init(void) {
     }
 
     scripts_loaded = false;
+    memset(&script_slots, 0, sizeof(script_slots));
     err = settings_load_subtree(YKB_BACKLIGHT_SETTINGS_NS);
     if (err || !scripts_loaded) {
-        LOG_WRN("No valid backlight script storage found (err %d). Loading defaults.",
+        LOG_WRN("No valid backlight script storage found (err %d). Loading "
+                "defaults.",
                 err);
         err = ykb_backlight_load_default_scripts();
         if (err) {
@@ -447,7 +525,8 @@ const ykb_backlight_settings_t *ykb_backlight_get_default_settings() {
     return &default_backlight_settings;
 }
 
-const ykb_backlight_script_slots_t *ykb_backlight_get_default_script_slots(void) {
+const ykb_backlight_script_slots_t *
+ykb_backlight_get_default_script_slots(void) {
     return default_script_slots;
 }
 
@@ -455,7 +534,8 @@ size_t ykb_backlight_get_script_slot_count(void) {
     return ARRAY_SIZE(script_slots.slots);
 }
 
-int ykb_backlight_get_script_slot(uint16_t slot, ykb_backlight_script_slot_t *out) {
+int ykb_backlight_get_script_slot(uint16_t slot,
+                                  ykb_backlight_script_slot_t *out) {
     if (!out) {
         return -EINVAL;
     }
