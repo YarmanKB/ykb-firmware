@@ -1,6 +1,7 @@
 #include <subsys/ykb_battsense.h>
 
 #include <subsys/kb_settings.h>
+#include <subsys/zephyr_user_helpers.h>
 
 #include <zephyr/drivers/charger.h>
 #include <zephyr/drivers/emul_fuel_gauge.h>
@@ -11,19 +12,22 @@
 
 LOG_MODULE_REGISTER(ykb_battsense, CONFIG_YKB_BATTSENSE_LOG_LEVEL);
 
-static const struct device *charger =
-    DEVICE_DT_GET(DT_PROP(DT_PATH(zephyr_user), ykb_battsense_charger));
-static const struct device *fuel_gauge =
-    DEVICE_DT_GET(DT_PROP(DT_PATH(zephyr_user), ykb_battsense_fuel_gauge));
-static const struct gpio_dt_spec pw_cutoff_gpio = GPIO_DT_SPEC_GET_OR(
-    DT_PATH(zephyr_user), ykb_battsense_pw_cutoff_gpios, {0});
+static const struct device *charger = Z_USER_DEV(ykb_battsense_charger);
+static const struct device *fuel_gauge = Z_USER_DEV(ykb_battsense_fuel_gauge);
+static const struct gpio_dt_spec pw_cutoff_gpio =
+    GPIO_DT_SPEC_GET_OR(Z_USER_PATH, ykb_battsense_pw_cutoff_gpios, {0});
 
-#define PW_CUTOFF_PRESENT (pw_cutoff_gpio.port != NULL)
+#define PW_CUTOFF_PRESENT IS_ENABLED(CONFIG_YKB_BATTSENSE_PW_CUTOFF_PRESENT)
 
-static uint32_t thread_sleep_ms =
-    CONFIG_YKB_BATTSENSE_THREAD_DEFAULT_SLEEP_TIME;
-static uint8_t low_threshold = CONFIG_YKB_BATTSENSE_LOW_THRESHOLD;
-static uint8_t crit_threshold = CONFIG_YKB_BATTSENSE_CRIT_THRESHOLD;
+static const ykb_battsense_settings_t battsense_default_settings = {
+    .thread_sleep_ms = CONFIG_YKB_BATTSENSE_THREAD_DEFAULT_SLEEP_TIME,
+    .low_threshold = CONFIG_YKB_BATTSENSE_LOW_THRESHOLD,
+};
+
+static ykb_battsense_settings_t battsense_settings = {
+    .thread_sleep_ms = CONFIG_YKB_BATTSENSE_THREAD_DEFAULT_SLEEP_TIME,
+    .low_threshold = CONFIG_YKB_BATTSENSE_LOW_THRESHOLD,
+};
 
 static ykb_battsense_state_t state;
 
@@ -72,12 +76,12 @@ static void battsense_thread_handler(void *a, void *b, void *c) {
 
         ykb_battsense_state_t old_state = state;
         state.charge_status = charger_state.status;
-        state.percentage = rsoc.relative_state_of_charge;
+        state.percentage = MIN(rsoc.relative_state_of_charge, 100);
         LOG_DBG("state: charge status %d, percentage %d", state.charge_status,
                 state.percentage);
 
         if (old_state.percentage > state.percentage &&
-            state.percentage <= crit_threshold) {
+            state.percentage <= CONFIG_YKB_BATTSENSE_CRIT_THRESHOLD) {
             STRUCT_SECTION_FOREACH(ykb_battsense_cb, cb) {
                 if (cb->on_critical_percentage) {
                     cb->on_critical_percentage(state);
@@ -90,7 +94,7 @@ static void battsense_thread_handler(void *a, void *b, void *c) {
                 return;
             }
         } else if (old_state.percentage > state.percentage &&
-                   state.percentage <= low_threshold) {
+                   state.percentage <= battsense_settings.low_threshold) {
             STRUCT_SECTION_FOREACH(ykb_battsense_cb, cb) {
                 if (cb->on_low_percentage) {
                     cb->on_low_percentage(state);
@@ -107,7 +111,7 @@ static void battsense_thread_handler(void *a, void *b, void *c) {
             }
         }
 
-        uint32_t sleep_time = thread_sleep_ms;
+        uint32_t sleep_time = battsense_settings.thread_sleep_ms;
         k_mutex_unlock(&battsense_mut);
         k_sleep(K_MSEC(sleep_time));
     }
@@ -165,9 +169,8 @@ SYS_INIT(ykb_battsense_init, POST_KERNEL, CONFIG_YKB_BATTSENSE_INIT_PRIORITY);
 
 static void on_settings_update(const kb_settings_t *settings) {
     k_mutex_lock(&battsense_mut, K_FOREVER);
-    thread_sleep_ms = settings->battsense.thread_sleep_ms;
-    low_threshold = settings->battsense.low_threshold;
-    crit_threshold = settings->battsense.crit_threshold;
+    memcpy(&battsense_settings, &settings->battsense,
+           sizeof(ykb_battsense_settings_t));
     k_mutex_unlock(&battsense_mut);
 }
 
@@ -183,4 +186,8 @@ int ykb_battsense_get_state(ykb_battsense_state_t *out_state) {
     k_mutex_unlock(&battsense_mut);
 
     return 0;
+}
+
+const ykb_battsense_settings_t *ykb_battsense_get_default_settings(void) {
+    return &battsense_default_settings;
 }

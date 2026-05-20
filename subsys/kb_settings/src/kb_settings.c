@@ -3,6 +3,9 @@
 #ifdef CONFIG_YKB_BACKLIGHT
 #include <subsys/ykb_backlight.h>
 #endif // CONFIG_YKB_BACKLIGHT
+#ifdef CONFIG_YKB_BATTSENSE
+#include <subsys/ykb_battsense.h>
+#endif // CONFIG_YKB_BATTSENSE
 
 #include <subsys/kb_handler.h>
 
@@ -114,6 +117,13 @@ static int kb_settings_load_defaults(void) {
     memcpy(&kb_settings.backlight, default_backlight_settings,
            sizeof(kb_settings.backlight));
 #endif // CONFIG_YKB_BACKLIGHT
+
+#if CONFIG_YKB_BATTSENSE
+    const ykb_battsense_settings_t *default_battsense_settings =
+        ykb_battsense_get_default_settings();
+    memcpy(&kb_settings.battsense, default_battsense_settings,
+           sizeof(kb_settings.battsense));
+#endif // CONFIG_YKB_BATTSENSE
 
 cleanup:
 

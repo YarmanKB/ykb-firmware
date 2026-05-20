@@ -1,9 +1,8 @@
 #ifndef YKB_BATTSENSE_H
 #define YKB_BATTSENSE_H
 
-#include <zephyr/drivers/charger.h>
-
 #include <zephyr/device.h>
+#include <zephyr/drivers/charger.h>
 #include <zephyr/sys/iterable_sections.h>
 #include <zephyr/toolchain.h>
 
@@ -14,6 +13,11 @@ typedef struct {
     enum charger_status charge_status;
     uint8_t percentage;
 } ykb_battsense_state_t;
+
+typedef struct {
+    uint8_t low_threshold;
+    uint16_t thread_sleep_ms;
+} ykb_battsense_settings_t;
 
 typedef void (*ykb_battsense_cb_t)(ykb_battsense_state_t state);
 
@@ -41,5 +45,7 @@ struct ykb_battsense_cb {
 #endif // CONFIG_YKB_BATTSENSE
 
 int ykb_battsense_get_state(ykb_battsense_state_t *out_state);
+
+const ykb_battsense_settings_t *ykb_battsense_get_default_settings(void);
 
 #endif // YKB_BATTSENSE_H

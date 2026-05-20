@@ -27,9 +27,13 @@ if YKB_BATTSENSE
         default 5
         range YKB_BATTSENSE_CRIT_THRESHOLD 100
 
+    config YKB_BATTSENSE_PW_CUTOFF_PRESENT
+        bool
+        default y if $(dt_node_has_prop,/$(ZEPHYR_USER),ykb-battsense-pw-cutoff-gpios)
+
     config YKB_BATTSENSE_SHUTOFF_ON_CHARGER_FAILURE
         bool "Shutdown the system if charger failure detected"
-        depends on $(dt_node_has_prop,/$(ZEPHYR_USER),ykb-battsense-pw-cutoff-gpios)
+        depends on YKB_BATTSENSE_PW_CUTOFF_PRESENT
         default y
 
     config YKB_BATTSENSE_INIT_PRIORITY

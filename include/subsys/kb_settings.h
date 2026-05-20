@@ -9,7 +9,11 @@
 
 #if CONFIG_YKB_BACKLIGHT
 #include <subsys/ykb_backlight.h>
-#endif
+#endif // CONFIG_YKB_BACKLIGHT
+
+#if CONFIG_YKB_BATTSENSE
+#include <subsys/ykb_battsense.h>
+#endif // CONFIG_YKB_BATTSENSE
 
 #if CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE
 #define TOTAL_KEY_COUNT                                                        \
@@ -32,12 +36,6 @@ typedef enum {
 #define KB_MOUSEEMU_MOVE_KEYS_MAX 8U
 #define KB_MOUSEEMU_SCROLL_KEYS_MAX 2U
 #define KB_MOUSEEMU_BUTTON_KEYS_MAX 3U
-
-typedef struct {
-    uint8_t low_threshold;
-    uint8_t crit_threshold;
-    uint16_t thread_sleep_ms;
-} kb_battsense_settings_t;
 
 enum kb_handler_transport_priority {
     KBH_TRANSPORT_PRIO_USB = 0U,
@@ -106,7 +104,9 @@ typedef struct {
 
     kb_mouseemu_settings_t mouseemu;
 
-    kb_battsense_settings_t battsense;
+#if CONFIG_YKB_BATTSENSE
+    ykb_battsense_settings_t battsense;
+#endif // CONFIG_YKB_BATTSENSE
 
     enum kb_handler_transport_priority kbh_prio;
 
