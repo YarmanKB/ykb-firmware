@@ -6,20 +6,18 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
+// TODO: THIS WILL HAVE ISSUES when both USBConnect and BTConnect subsystems
+// will use this simultaneously. Probably fine for now. I hope.
+
 LOG_MODULE_REGISTER(vendor_hid_protocol, LOG_LEVEL_INF);
 
 static FEATURES_DEFINE(features);
 static kb_settings_t settings_snap;
+
+#if CONFIG_YKB_BACKLIGHT
 static vendor_hid_proto_script_slot_packet_t script_slot_snap;
 static vendor_hid_proto_script_slot_info_t script_slot_info_snap;
-
-static device_features *vendor_hid_protocol_get_features(void) {
-    return &features;
-}
-
-static void vendor_hid_protocol_get_values(uint16_t *values, uint16_t count) {
-    kb_handler_get_values(values, count);
-}
+#endif // CONFIG_YKB_BACKLIGHT
 
 static kb_settings_t *vendor_hid_protocol_get_settings(void) {
     int err = kb_settings_get(&settings_snap);
@@ -39,6 +37,8 @@ static int vendor_hid_protocol_set_settings(const kb_settings_t *settings) {
 
     return err;
 }
+
+#if CONFIG_YKB_BACKLIGHT
 
 static void vendor_hid_protocol_script_slot_to_wire(
     vendor_hid_proto_script_slot_payload_t *out,
@@ -141,35 +141,7 @@ static int vendor_hid_protocol_rename_script_slot(
     return err;
 }
 
-static int vendor_hid_protocol_set_active_script_slot(uint16_t slot) {
-    ykb_backlight_script_slot_t slot_data;
-    kb_settings_t settings;
-    int err;
-
-    err = ykb_backlight_get_script_slot(slot, &slot_data);
-    if (err) {
-        LOG_ERR("ykb_backlight_get_script_slot(%u): %d", slot, err);
-        return err;
-    }
-
-    if (!slot_data.occupied || slot_data.size == 0) {
-        return -ENOENT;
-    }
-
-    err = kb_settings_get(&settings);
-    if (err) {
-        LOG_ERR("kb_settings_get: %d", err);
-        return err;
-    }
-
-    settings.backlight.active_script_index = slot;
-    err = kb_settings_apply(&settings);
-    if (err) {
-        LOG_ERR("kb_settings_apply(active_script_index=%u): %d", slot, err);
-    }
-
-    return err;
-}
+#endif // CONFIG_YKB_BACKLIGHT
 
 static void response_work_handler(struct k_work *work) {
     vendor_hid_protocol_ctx_t *ctx =
@@ -181,23 +153,16 @@ static void response_work_handler(struct k_work *work) {
 
     switch (ctx->current_response) {
     case RESPONSE_GET_FEATURES: {
-        device_features *feature_data = vendor_hid_protocol_get_features();
-        if (!feature_data) {
-            response_code = RESPONSE_ERROR;
-            data = &response_code;
-            len = sizeof(response_code);
-            break;
-        }
-        data = (uint8_t *)feature_data;
-        len = sizeof(*feature_data);
+        data = (uint8_t *)&features;
+        len = sizeof(features);
         break;
     }
-    case RESPONSE_GET_VALUES:
-        vendor_hid_protocol_get_values(values, TOTAL_KEY_COUNT);
+    case RESPONSE_GET_VALUES: {
+        kb_handler_get_values(values, TOTAL_KEY_COUNT);
         data = (uint8_t *)values;
         len = sizeof(values);
         break;
-
+    }
     case RESPONSE_GET_SETTINGS: {
         kb_settings_t *settings = vendor_hid_protocol_get_settings();
         if (!settings) {
@@ -210,18 +175,20 @@ static void response_work_handler(struct k_work *work) {
         len = sizeof(*settings);
         break;
     }
-    case RESPONSE_SET_SETTINGS_OK:
+    case RESPONSE_SET_SETTINGS_OK: {
         response_code = RESPONSE_SET_SETTINGS_OK;
         data = &response_code;
         len = sizeof(response_code);
         break;
+    }
+#if CONFIG_YKB_BACKLIGHT
     case RESPONSE_GET_LUMISCRIPT_SLOT: {
         const vendor_hid_proto_packet_t *request =
             (const vendor_hid_proto_packet_t *)ctx->rx_buffer;
         const vendor_hid_proto_script_slot_get_request_t *slot_request =
             (const vendor_hid_proto_script_slot_get_request_t *)request->data;
-        int err =
-            vendor_hid_protocol_get_script_slot(slot_request->slot, &script_slot_snap);
+        int err = vendor_hid_protocol_get_script_slot(slot_request->slot,
+                                                      &script_slot_snap);
         if (err) {
             response_code = RESPONSE_ERROR;
             data = &response_code;
@@ -232,18 +199,19 @@ static void response_work_handler(struct k_work *work) {
         len = sizeof(script_slot_snap);
         break;
     }
-    case RESPONSE_SET_LUMISCRIPT_SLOT_OK:
+    case RESPONSE_SET_LUMISCRIPT_SLOT_OK: {
         response_code = RESPONSE_SET_LUMISCRIPT_SLOT_OK;
         data = &response_code;
         len = sizeof(response_code);
         break;
+    }
     case RESPONSE_GET_LUMISCRIPT_SLOT_INFO: {
         const vendor_hid_proto_packet_t *request =
             (const vendor_hid_proto_packet_t *)ctx->rx_buffer;
         const vendor_hid_proto_script_slot_get_request_t *slot_request =
             (const vendor_hid_proto_script_slot_get_request_t *)request->data;
-        int err = vendor_hid_protocol_get_script_slot_info(slot_request->slot,
-                                                           &script_slot_info_snap);
+        int err = vendor_hid_protocol_get_script_slot_info(
+            slot_request->slot, &script_slot_info_snap);
         if (err) {
             response_code = RESPONSE_ERROR;
             data = &response_code;
@@ -254,28 +222,26 @@ static void response_work_handler(struct k_work *work) {
         len = sizeof(script_slot_info_snap);
         break;
     }
-    case RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK:
+    case RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK: {
         response_code = RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK;
         data = &response_code;
         len = sizeof(response_code);
         break;
-    case RESPONSE_RENAME_LUMISCRIPT_SLOT_OK:
+    }
+    case RESPONSE_RENAME_LUMISCRIPT_SLOT_OK: {
         response_code = RESPONSE_RENAME_LUMISCRIPT_SLOT_OK;
         data = &response_code;
         len = sizeof(response_code);
         break;
-    case RESPONSE_SET_ACTIVE_LUMISCRIPT_SLOT_OK:
-        response_code = RESPONSE_SET_ACTIVE_LUMISCRIPT_SLOT_OK;
-        data = &response_code;
-        len = sizeof(response_code);
-        break;
-
+    }
+#endif // CONFIG_YKB_BACKLIGHT
     case RESPONSE_ERROR:
-    default:
+    default: {
         response_code = RESPONSE_ERROR;
         data = &response_code;
         len = sizeof(response_code);
         break;
+    }
     }
 
     ykb_protocol_tx_state_t tx;
@@ -338,8 +304,8 @@ int vendor_hid_protocol_parse(vendor_hid_protocol_ctx_t *ctx,
         return -EMSGSIZE;
     }
 
-    ykb_protocol_rx_result_t res =
-        ykb_protocol_rx_push_packet(&ctx->rx, (const ykb_protocol_packet_t *)data);
+    ykb_protocol_rx_result_t res = ykb_protocol_rx_push_packet(
+        &ctx->rx, (const ykb_protocol_packet_t *)data);
     if (res < 0) {
         LOG_ERR("ykb_protocol_rx_push_packet: %d", res);
         return (int)res;
@@ -355,18 +321,18 @@ int vendor_hid_protocol_parse(vendor_hid_protocol_ctx_t *ctx,
         (const vendor_hid_proto_packet_t *)ctx->rx_buffer;
 
     switch ((enum request_type)request->header.type) {
-    case REQUEST_GET_FEATURES:
+    case REQUEST_GET_FEATURES: {
         ctx->current_response = RESPONSE_GET_FEATURES;
         break;
-
-    case REQUEST_GET_VALUES:
+    }
+    case REQUEST_GET_VALUES: {
         ctx->current_response = RESPONSE_GET_VALUES;
         break;
-
-    case REQUEST_GET_SETTINGS:
+    }
+    case REQUEST_GET_SETTINGS: {
         ctx->current_response = RESPONSE_GET_SETTINGS;
         break;
-
+    }
     case REQUEST_SET_SETTINGS: {
         int err = vendor_hid_protocol_set_settings(
             (const kb_settings_t *)request->data);
@@ -374,10 +340,11 @@ int vendor_hid_protocol_parse(vendor_hid_protocol_ctx_t *ctx,
             (err == 0) ? RESPONSE_SET_SETTINGS_OK : RESPONSE_ERROR;
         break;
     }
-    case REQUEST_GET_LUMISCRIPT_SLOT:
+#if CONFIG_YKB_BACKLIGHT
+    case REQUEST_GET_LUMISCRIPT_SLOT: {
         ctx->current_response = RESPONSE_GET_LUMISCRIPT_SLOT;
         break;
-
+    }
     case REQUEST_SET_LUMISCRIPT_SLOT: {
         int err = vendor_hid_protocol_set_script_slot(
             (const vendor_hid_proto_script_slot_packet_t *)request->data);
@@ -385,10 +352,10 @@ int vendor_hid_protocol_parse(vendor_hid_protocol_ctx_t *ctx,
             (err == 0) ? RESPONSE_SET_LUMISCRIPT_SLOT_OK : RESPONSE_ERROR;
         break;
     }
-    case REQUEST_GET_LUMISCRIPT_SLOT_INFO:
+    case REQUEST_GET_LUMISCRIPT_SLOT_INFO: {
         ctx->current_response = RESPONSE_GET_LUMISCRIPT_SLOT_INFO;
         break;
-
+    }
     case REQUEST_CLEAR_LUMISCRIPT_SLOT: {
         const vendor_hid_proto_script_slot_get_request_t *slot_request =
             (const vendor_hid_proto_script_slot_get_request_t *)request->data;
@@ -397,29 +364,20 @@ int vendor_hid_protocol_parse(vendor_hid_protocol_ctx_t *ctx,
             (err == 0) ? RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK : RESPONSE_ERROR;
         break;
     }
-
     case REQUEST_RENAME_LUMISCRIPT_SLOT: {
         int err = vendor_hid_protocol_rename_script_slot(
-            (const vendor_hid_proto_script_slot_rename_request_t *)request->data);
+            (const vendor_hid_proto_script_slot_rename_request_t *)
+                request->data);
         ctx->current_response =
             (err == 0) ? RESPONSE_RENAME_LUMISCRIPT_SLOT_OK : RESPONSE_ERROR;
         break;
     }
-
-    case REQUEST_SET_ACTIVE_LUMISCRIPT_SLOT: {
-        const vendor_hid_proto_script_slot_get_request_t *slot_request =
-            (const vendor_hid_proto_script_slot_get_request_t *)request->data;
-        int err = vendor_hid_protocol_set_active_script_slot(slot_request->slot);
-        ctx->current_response = (err == 0)
-                                    ? RESPONSE_SET_ACTIVE_LUMISCRIPT_SLOT_OK
-                                    : RESPONSE_ERROR;
-        break;
-    }
-
-    default:
+#endif // CONFIG_YKB_BACKLIGHT
+    default: {
         LOG_ERR("Unknown request type %u", request->header.type);
         ctx->current_response = RESPONSE_ERROR;
         break;
+    }
     }
 
     k_work_submit(&ctx->response_work);

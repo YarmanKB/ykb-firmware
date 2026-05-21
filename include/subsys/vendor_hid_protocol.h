@@ -19,12 +19,14 @@ enum request_type {
     REQUEST_GET_VALUES = 1U,
     REQUEST_GET_SETTINGS = 2U,
     REQUEST_SET_SETTINGS = 3U,
+
+#if CONFIG_YKB_BACKLIGHT
     REQUEST_GET_LUMISCRIPT_SLOT = 4U,
     REQUEST_SET_LUMISCRIPT_SLOT = 5U,
     REQUEST_GET_LUMISCRIPT_SLOT_INFO = 6U,
     REQUEST_CLEAR_LUMISCRIPT_SLOT = 7U,
     REQUEST_RENAME_LUMISCRIPT_SLOT = 8U,
-    REQUEST_SET_ACTIVE_LUMISCRIPT_SLOT = 9U,
+#endif // CONFIG_YKB_BACKLIGHT
 };
 
 enum response_type {
@@ -32,14 +34,19 @@ enum response_type {
     RESPONSE_GET_VALUES = 1U,
     RESPONSE_GET_SETTINGS = 2U,
     RESPONSE_SET_SETTINGS_OK = 3U,
+
+#if CONFIG_YKB_BACKLIGHT
     RESPONSE_GET_LUMISCRIPT_SLOT = 4U,
     RESPONSE_SET_LUMISCRIPT_SLOT_OK = 5U,
     RESPONSE_GET_LUMISCRIPT_SLOT_INFO = 6U,
     RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK = 7U,
     RESPONSE_RENAME_LUMISCRIPT_SLOT_OK = 8U,
-    RESPONSE_SET_ACTIVE_LUMISCRIPT_SLOT_OK = 9U,
+#endif // CONFIG_YKB_BACKLIGHT
+
     RESPONSE_ERROR = 255U,
 };
+
+#if CONFIG_YKB_BACKLIGHT
 
 typedef struct __packed {
     uint8_t occupied;
@@ -69,8 +76,11 @@ typedef struct __packed {
     char name[CONFIG_YKB_BL_SCRIPT_NAME_MAX_LEN + 1];
 } vendor_hid_proto_script_slot_rename_request_t;
 
-#define VENDOR_HID_MAX_DATA_LEN                                               \
+#define VENDOR_HID_MAX_DATA_LEN                                                \
     MAX(sizeof(kb_settings_t), sizeof(vendor_hid_proto_script_slot_packet_t))
+#else
+#define VENDOR_HID_MAX_DATA_LEN sizeof(kb_settings_t)
+#endif // CONFIG_YKB_BACKLIGHT
 
 typedef struct __packed {
     uint8_t type;

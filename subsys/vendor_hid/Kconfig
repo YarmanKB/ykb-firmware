@@ -1,15 +1,19 @@
 config VENDOR_HID
-    bool
+    bool "Enable Vendor HID subsystem/library for communicating with host via vendor HID device"
 
 if VENDOR_HID
 
-choice VENDOR_HID_PROTOCOL_IMPL
-    prompt "Vendor HID protocol implementation"
-    default VENDOR_HID_PROTOCOL_YKB
+    module = VENDOR_HID
+    module-str = vendor_hid
+    source "subsys/logging/Kconfig.template.log_config"
 
-    config VENDOR_HID_PROTOCOL_YKB
-        bool "Use YKB protocol"
+    choice VENDOR_HID_PROTOCOL_IMPL
+        prompt "Vendor HID protocol implementation"
+        default VENDOR_HID_PROTOCOL_YKB
 
-endchoice
+        config VENDOR_HID_PROTOCOL_YKB
+            bool "Use YKB protocol"
+
+    endchoice # VENDOR_HID_PROTOCOL_IMPL
 
 endif # VENDOR_HID
