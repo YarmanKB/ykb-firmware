@@ -1,8 +1,7 @@
-#include <subsys/kb_handler_internal_api.h>
-#if CONFIG_BT_CONNECT
-#include <subsys/bt_connect.h>
-#endif
 #include <subsys/splitlink_sync.h>
+
+#include <subsys/bt_connect.h>
+#include <subsys/kb_handler_internal_api.h>
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -27,8 +26,8 @@ static uint32_t splitlink_script_slot_crc32(uint16_t slot) {
     return crc32;
 }
 
-static void splitlink_build_script_manifest(
-    splitlink_script_manifest_t *manifest) {
+static void
+splitlink_build_script_manifest(splitlink_script_manifest_t *manifest) {
     ykb_backlight_script_slot_t slot_data;
 
     memset(manifest, 0, sizeof(*manifest));
@@ -63,9 +62,9 @@ void splitlink_sync_on_connect() {
 void splitlink_sync_on_disconnect() {
     LOG_WRN("SplitLink slave disconnected");
     kb_handler_core_handle_slave_reset();
-#if CONFIG_BT_CONNECT
+#if CONFIG_BT_CONNECT_BAS
     bt_connect_clear_secondary_battery_state();
-#endif
+#endif // CONFIG_BT_CONNECT_BAS
 }
 
 void splitlink_sync_on_settings_update(const kb_settings_t *settings) {
@@ -90,8 +89,8 @@ void splitlink_sync_on_script_slot_update(uint16_t slot) {
     splitlink_sync_queue_script_slot_sync(slot);
 }
 
-void splitlink_sync_battery_state_received(const splitlink_battery_state_t *state) {
-#if CONFIG_BT_CONNECT
+void splitlink_sync_battery_state_received(
+    const splitlink_battery_state_t *state) {
     ykb_battsense_state_t slave_state = {0};
 
     if (!state) {
@@ -100,9 +99,8 @@ void splitlink_sync_battery_state_received(const splitlink_battery_state_t *stat
 
     slave_state.percentage = state->percentage;
     slave_state.charge_status = (enum charger_status)state->charge_status;
+#if CONFIG_BT_CONNECT_BAS
     bt_connect_set_secondary_battery_state(&slave_state);
-#else
-    ARG_UNUSED(state);
 #endif
 }
 
@@ -113,7 +111,8 @@ int splitlink_sync_master_attach_kb_handler(void) {
         return err;
     }
 
-    err = kb_handler_register_settings_update_cb(splitlink_sync_on_settings_update);
+    err = kb_handler_register_settings_update_cb(
+        splitlink_sync_on_settings_update);
     if (err) {
         return err;
     }

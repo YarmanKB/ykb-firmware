@@ -48,9 +48,15 @@ if BT_CONNECT
         default y
         select VENDOR_HID
 
+    config BT_CONNECT_BAS
+        bool "Enable BAS service for reporting battery level"
+        depends on YKB_BATTSENSE
+        default y
+
     config BT_CONNECT_SPLIT_BAS
         bool "Enable secondary BAS for split keyboard slave battery"
-        default y if SPLITLINK_SYNC_MASTER
+        depends on BT_CONNECT_BAS && SPLITLINK_SYNC_MASTER
+        default n
 
     configdefault BT_MAX_CONN
         default 1

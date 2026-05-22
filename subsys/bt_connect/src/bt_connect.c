@@ -1,5 +1,5 @@
-#include <subsys/splitlink_bt.h>
 #include <subsys/bt_connect.h>
+#include <subsys/splitlink_bt.h>
 
 #include "hid_devices/hid_devices.h"
 
@@ -33,15 +33,15 @@ LOG_MODULE_REGISTER(bt_connect, CONFIG_BT_CONNECT_LOG_LEVEL);
 BT_HIDS_DEF(hids_obj,
 #if CONFIG_BT_CONNECT_KBD
             BT_CONNECT_KBD_INPUT_REPORT_SIZE, BT_CONNECT_KBD_OUTPUT_REPORT_SIZE,
-#endif
+#endif // CONFIG_BT_CONNECT_KBD
 #if CONFIG_BT_CONNECT_MOUSE
             BT_CONNECT_MOUSE_INPUT_REPORT_SIZE,
-#endif
+#endif // CONFIG_BT_CONNECT_MOUSE
 #if CONFIG_BT_CONNECT_VENDOR
             BT_CONNECT_VENDOR_OUTPUT_REPORT_SIZE,
             BT_CONNECT_VENDOR_INPUT_REPORT_SIZE,
             BT_CONNECT_VENDOR_FEATURE_REPORT_SIZE,
-#endif
+#endif // CONFIG_BT_CONNECT_VENDOR
 );
 
 static struct bt_connect_conn_state
@@ -63,14 +63,18 @@ static const struct bt_data sd[] = {
 static bool is_advertising;
 static uint8_t assembled_report_map[CONFIG_BT_CONNECT_REPORT_MAP_MAX_SIZE];
 static size_t assembled_report_map_size;
+
+#if CONFIG_BT_CONNECT_BAS
+
 static bool battery_notifications_ready;
 static bool battery_level_pending_valid;
 static uint8_t pending_battery_level;
 static uint8_t primary_battery_level;
+
 #if CONFIG_BT_CONNECT_SPLIT_BAS
 static uint8_t secondary_battery_level;
 static bool secondary_battery_notifications_ready;
-#endif
+#endif // CONFIG_BT_CONNECT_SPLIT_BAS
 
 static ssize_t read_primary_battery_level(struct bt_conn *conn,
                                           const struct bt_gatt_attr *attr,
@@ -85,14 +89,14 @@ static ssize_t read_secondary_battery_level(struct bt_conn *conn,
                                             uint16_t offset);
 static void secondary_battery_ccc_cfg_changed(const struct bt_gatt_attr *attr,
                                               uint16_t value);
-#endif
+#endif // CONFIG_BT_CONNECT_SPLIT_BAS
 
 static struct bt_gatt_attr primary_bas_attrs[] = {
     BT_GATT_PRIMARY_SERVICE(BT_UUID_BAS),
     BT_GATT_CHARACTERISTIC(BT_UUID_BAS_BATTERY_LEVEL,
                            BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
-                           BT_GATT_PERM_READ, read_primary_battery_level,
-                           NULL, &primary_battery_level),
+                           BT_GATT_PERM_READ, read_primary_battery_level, NULL,
+                           &primary_battery_level),
     BT_GATT_CCC(primary_battery_ccc_cfg_changed,
                 BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
 };
@@ -113,21 +117,24 @@ static struct bt_gatt_attr secondary_bas_attrs[] = {
 
 static struct bt_gatt_service secondary_bas_svc =
     BT_GATT_SERVICE(secondary_bas_attrs);
-#endif
+#endif // CONFIG_BT_CONNECT_SPLIT_BAS
 
 static void publish_pending_battery_level(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(battery_level_publish_work,
                                publish_pending_battery_level);
 
+#endif // CONFIG_BT_CONNECT_BAS
+
 #if CONFIG_BT_CONNECT_KBD
 int bt_connect_keyboard_send_report(const hid_kb_report_t *report);
-#endif
+#endif // CONFIG_BT_CONNECT_KBD
 #if CONFIG_BT_CONNECT_MOUSE
 int bt_connect_mouse_send_report(const hid_mouse_report_t *report);
-#endif
+#endif // CONFIG_BT_CONNECT_MOUSE
 
 struct bt_hids *bt_connect_hids_obj(void) { return &hids_obj; }
 
+#if CONFIG_BT_CONNECT_BAS
 static void publish_pending_battery_level(struct k_work *work) {
     ARG_UNUSED(work);
 
@@ -136,8 +143,9 @@ static void publish_pending_battery_level(struct k_work *work) {
     }
 
     primary_battery_level = MIN(pending_battery_level, 100U);
-    int err = bt_gatt_notify(NULL, &primary_bas_attrs[2], &primary_battery_level,
-                             sizeof(primary_battery_level));
+    int err =
+        bt_gatt_notify(NULL, &primary_bas_attrs[2], &primary_battery_level,
+                       sizeof(primary_battery_level));
     if (err) {
         LOG_ERR("Failed to update BAS battery level (%d)", err);
         return;
@@ -182,14 +190,16 @@ static void secondary_battery_publish(void) {
         return;
     }
 
-    int err = bt_gatt_notify(NULL, &secondary_bas_attrs[2],
-                             &secondary_battery_level,
-                             sizeof(secondary_battery_level));
+    int err =
+        bt_gatt_notify(NULL, &secondary_bas_attrs[2], &secondary_battery_level,
+                       sizeof(secondary_battery_level));
     if (err) {
         LOG_ERR("Failed to update secondary BAS battery level (%d)", err);
     }
 }
-#endif
+#endif // CONFIG_BT_CONNECT_SPLIT_BAS
+
+#endif // CONFIG_BT_CONNECT_BAS
 
 void bt_connect_foreach_conn(bt_connect_conn_iter_fn_t fn, void *user_data) {
     if (!fn) {
@@ -352,7 +362,9 @@ static void connected(struct bt_conn *conn, uint8_t err) {
     state->conn = bt_conn_ref(conn);
     state->in_boot_mode = false;
     is_advertising = false;
+#if CONFIG_BT_CONNECT_BAS
     battery_notifications_ready = false;
+#endif // CONFIG_BT_CONNECT_BAS
 
     sec_err = bt_conn_set_security(conn, BT_SECURITY_L2);
     if (sec_err && sec_err != -EALREADY) {
@@ -385,8 +397,10 @@ static void disconnected(struct bt_conn *conn, uint8_t reason) {
         state->in_boot_mode = false;
     }
 
+#if CONFIG_BT_CONNECT_BAS
     battery_notifications_ready = false;
     (void)k_work_cancel_delayable(&battery_level_publish_work);
+#endif // CONFIG_BT_CONNECT_BAS
 
     notify_disconnected(&addr);
     LOG_INF("Bluetooth disconnected (reason 0x%02x)", reason);
@@ -407,10 +421,12 @@ static void security_changed(struct bt_conn *conn, bt_security_t level,
 
     LOG_INF("Security changed, level %u", level);
 
+#if CONFIG_BT_CONNECT_BAS
     if (level >= BT_SECURITY_L2) {
         battery_notifications_ready = true;
         k_work_reschedule(&battery_level_publish_work, K_MSEC(500));
     }
+#endif // CONFIG_BT_CONNECT_BAS
 }
 
 BT_CONN_CB_DEFINE(conn_callbacks) = {
@@ -461,6 +477,7 @@ static struct bt_conn_auth_info_cb conn_auth_info_callbacks = {
     .pairing_failed = pairing_failed,
 };
 
+#if CONFIG_BT_CONNECT_BAS
 void bt_connect_set_battery_level(uint8_t percentage) {
     pending_battery_level = MIN(percentage, 100U);
     battery_level_pending_valid = true;
@@ -473,48 +490,42 @@ void bt_connect_set_battery_level(uint8_t percentage) {
     }
 }
 
+#if CONFIG_BT_CONNECT_SPLIT_BAS
 void bt_connect_set_secondary_battery_state(
     const ykb_battsense_state_t *state) {
-#if CONFIG_BT_CONNECT_SPLIT_BAS
     if (!state) {
         return;
     }
 
     secondary_battery_level = MIN(state->percentage, 100U);
     secondary_battery_publish();
-#else
-    ARG_UNUSED(state);
-#endif
 }
 
 void bt_connect_clear_secondary_battery_state(void) {
-#if CONFIG_BT_CONNECT_SPLIT_BAS
     secondary_battery_level = 0U;
     secondary_battery_publish();
-#endif
 }
+#endif // CONFIG_BT_CONNECT_SPLIT_BAS
 
-void bt_connect_send_kb_report(const hid_kb_report_t *report) {
+#endif // CONFIG_BT_CONNECT_BAS
+
 #if CONFIG_BT_CONNECT_KBD
+void bt_connect_send_kb_report(const hid_kb_report_t *report) {
     int err = bt_connect_keyboard_send_report(report);
     if (err) {
         LOG_ERR("Failed to send keyboard report over BLE (%d)", err);
     }
-#else
-    ARG_UNUSED(report);
-#endif
 }
+#endif // CONFIG_BT_CONNECT_KBD
 
-void bt_connect_send_mouse_report(const hid_mouse_report_t *report) {
 #if CONFIG_BT_CONNECT_MOUSE
+void bt_connect_send_mouse_report(const hid_mouse_report_t *report) {
     int err = bt_connect_mouse_send_report(report);
     if (err) {
         LOG_ERR("Failed to send mouse report over BLE (%d)", err);
     }
-#else
-    ARG_UNUSED(report);
-#endif
 }
+#endif // CONFIG_BT_CONNECT_MOUSE
 
 static int assemble_report_map(void) {
     assembled_report_map_size = 0;
@@ -586,7 +597,7 @@ static int bt_connect_hid_init(void) {
     return 0;
 }
 
-#if CONFIG_YKB_BATTSENSE
+#if CONFIG_BT_CONNECT_BAS
 static void on_battery_state_changed(ykb_battsense_state_t state) {
     bt_connect_set_battery_level(state.percentage);
 }
@@ -596,7 +607,7 @@ static YKB_BATTSENSE_DEFINE(bt_connect_battery_transport) = {
     .on_low_percentage = on_battery_state_changed,
     .on_critical_percentage = on_battery_state_changed,
 };
-#endif
+#endif // CONFIG_BT_CONNECT_BAS
 
 static int bt_connect_init(void) {
     int err;
@@ -618,12 +629,14 @@ static int bt_connect_init(void) {
         return err;
     }
 
+#if CONFIG_BT_CONNECT_BAS
     err = bt_gatt_service_register(&primary_bas_svc);
     if (err) {
         LOG_ERR("Failed to register primary BAS service (%d)", err);
         return err;
     }
-    LOG_INF("Primary BAS registered: svc_handle=0x%04x level_handle=0x%04x ccc_handle=0x%04x",
+    LOG_INF("Primary BAS registered: svc_handle=0x%04x level_handle=0x%04x "
+            "ccc_handle=0x%04x",
             primary_bas_attrs[0].handle, primary_bas_attrs[2].handle,
             primary_bas_attrs[3].handle);
 #if CONFIG_BT_CONNECT_SPLIT_BAS
@@ -632,16 +645,18 @@ static int bt_connect_init(void) {
         LOG_ERR("Failed to register secondary BAS service (%d)", err);
         return err;
     }
-    LOG_INF("Secondary BAS registered: svc_handle=0x%04x level_handle=0x%04x ccc_handle=0x%04x",
+    LOG_INF("Secondary BAS registered: svc_handle=0x%04x level_handle=0x%04x "
+            "ccc_handle=0x%04x",
             secondary_bas_attrs[0].handle, secondary_bas_attrs[2].handle,
             secondary_bas_attrs[3].handle);
-#endif
+#endif // CONFIG_BT_CONNECT_SPLIT_BAS
     primary_battery_level = 0U;
 #if CONFIG_BT_CONNECT_SPLIT_BAS
     secondary_battery_level = 0U;
     secondary_battery_notifications_ready = false;
-#endif
+#endif // CONFIG_BT_CONNECT_SPLIT_BAS
     battery_notifications_ready = false;
+#endif // CONFIG_BT_CONNECT_BAS
 
     err = bt_enable(NULL);
     if (err) {
@@ -653,14 +668,14 @@ static int bt_connect_init(void) {
         settings_load();
     }
 
-#if CONFIG_YKB_BATTSENSE
+#if CONFIG_BT_CONNECT_BAS
     ykb_battsense_state_t state;
 
     err = ykb_battsense_get_state(&state);
     if (!err) {
         bt_connect_set_battery_level(state.percentage);
     }
-#endif
+#endif // CONFIG_BT_CONNECT_BAS
 
     advertising_start();
 
