@@ -5,13 +5,9 @@
 #include <zephyr/kernel.h>
 
 KSCAN_CB_DEFINE(kb_handler_splitlink_master_adapter) = {
-    .on_event = splitlink_sync_master_on_local_key_event,
-    .on_new_value = splitlink_sync_master_on_local_value,
+    .on_event = kb_handler_core_handle_key_event,
+    .on_new_value = kb_handler_core_handle_value,
 };
 
-static int kb_handler_splitlink_master_adapter_init(void) {
-    return splitlink_sync_master_attach_kb_handler();
-}
-
-SYS_INIT(kb_handler_splitlink_master_adapter_init, POST_KERNEL,
+SYS_INIT(splitlink_sync_master_attach_kb_handler, POST_KERNEL,
          CONFIG_KB_HANDLER_INIT_PRIORITY);

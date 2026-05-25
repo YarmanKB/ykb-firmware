@@ -7,7 +7,7 @@ if LOG
         default y
 
     config UART_CONSOLE
-        default y
+        default y if !BOOT_SERIAL_CDC_ACM
 
 endif # LOG
 

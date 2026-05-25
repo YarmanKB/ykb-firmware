@@ -64,6 +64,7 @@ static void battsense_thread_handler(void *a, void *b, void *c) {
         err = charger_get_prop(charger, CHARGER_PROP_STATUS, &charger_state);
         if (err) {
             LOG_ERR("Unable to get charger property status: %d", err);
+            k_mutex_unlock(&battsense_mut);
             continue;
         }
 
@@ -71,6 +72,7 @@ static void battsense_thread_handler(void *a, void *b, void *c) {
                                   FUEL_GAUGE_RELATIVE_STATE_OF_CHARGE, &rsoc);
         if (err) {
             LOG_ERR("Unable to get fuel-gauge property RSOC: %d", err);
+            k_mutex_unlock(&battsense_mut);
             continue;
         }
 

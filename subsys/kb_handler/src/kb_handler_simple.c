@@ -10,6 +10,4 @@ KSCAN_CB_DEFINE(kbh_simple) = {
     .on_new_value = kb_handler_core_handle_value,
 };
 
-static int kb_handler_simple_init(void) { return kb_handler_core_init(); }
-
-SYS_INIT(kb_handler_simple_init, POST_KERNEL, CONFIG_KB_HANDLER_INIT_PRIORITY);
+SYS_INIT(kb_handler_core_init, POST_KERNEL, CONFIG_KB_HANDLER_INIT_PRIORITY);

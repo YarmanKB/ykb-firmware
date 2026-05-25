@@ -1,3 +1,4 @@
+#include "splitlink_sync_private.h"
 #include <subsys/splitlink.h>
 #include <subsys/splitlink_sync.h>
 
@@ -111,7 +112,8 @@ RX_SLOT(scripts_manifest, sizeof(splitlink_script_manifest_t),
         SCRIPT_MANIFEST_SLOT_ID);
 TX_SLOT(scripts_request, sizeof(splitlink_script_request_t),
         SCRIPT_REQUEST_SLOT_ID);
-RX_SLOT(script_slot, sizeof(splitlink_script_slot_packet_t), SCRIPT_SLOT_SLOT_ID);
+RX_SLOT(script_slot, sizeof(splitlink_script_slot_packet_t),
+        SCRIPT_SLOT_SLOT_ID);
 #endif // CONFIG_SPLITLINK_SYNC_SLAVE
 
 #if CONFIG_SPLITLINK_SYNC_SLAVE
@@ -132,7 +134,8 @@ TX_SLOT(scripts_manifest, sizeof(splitlink_script_manifest_t),
         SCRIPT_MANIFEST_SLOT_ID);
 RX_SLOT(scripts_request, sizeof(splitlink_script_request_t),
         SCRIPT_REQUEST_SLOT_ID);
-TX_SLOT(script_slot, sizeof(splitlink_script_slot_packet_t), SCRIPT_SLOT_SLOT_ID);
+TX_SLOT(script_slot, sizeof(splitlink_script_slot_packet_t),
+        SCRIPT_SLOT_SLOT_ID);
 #endif // CONFIG_SPLITLINK_SYNC_MASTER
 
 static inline void rx_init(struct rx_slot *slot) {
@@ -223,7 +226,8 @@ static void benchmark_schedule_next(k_timeout_t delay) {
     (void)k_work_reschedule(&benchmark_work, delay);
 }
 
-static void benchmark_log_sample(const struct splitlink_benchmark_payload *sample) {
+static void
+benchmark_log_sample(const struct splitlink_benchmark_payload *sample) {
     uint32_t rtt_us =
         benchmark_cycles_to_us(k_cycle_get_32() - sample->sent_cycles);
 
@@ -237,10 +241,11 @@ static void benchmark_log_sample(const struct splitlink_benchmark_payload *sampl
     benchmark_samples++;
     benchmark_total_us += rtt_us;
 
-    LOG_INF("Splitlink RTT: seq=%u rtt=%u us avg=%u us min=%u us max=%u us timeouts=%u",
+    LOG_INF("Splitlink RTT: seq=%u rtt=%u us avg=%u us min=%u us max=%u us "
+            "timeouts=%u",
             sample->seq, rtt_us,
-            (uint32_t)(benchmark_total_us / benchmark_samples), benchmark_min_us,
-            benchmark_max_us, benchmark_timeouts);
+            (uint32_t)(benchmark_total_us / benchmark_samples),
+            benchmark_min_us, benchmark_max_us, benchmark_timeouts);
 }
 
 static void benchmark_work_handler(struct k_work *work) {
@@ -252,8 +257,8 @@ static void benchmark_work_handler(struct k_work *work) {
 
     if (ATOMIC_LOAD(&benchmark_inflight)) {
         benchmark_timeouts++;
-        LOG_WRN("Splitlink RTT timeout: seq=%u total_timeouts=%u", benchmark_seq,
-                benchmark_timeouts);
+        LOG_WRN("Splitlink RTT timeout: seq=%u total_timeouts=%u",
+                benchmark_seq, benchmark_timeouts);
         ATOMIC_STORE(&benchmark_inflight, false);
     }
 
@@ -268,8 +273,7 @@ static void benchmark_work_handler(struct k_work *work) {
                          BENCHMARK_SLOT_ID, YKB_PROTOCOL_TYPE_DATA);
     if (!ykb_protocol_tx_build_packet(&tx, &packet)) {
         LOG_ERR("Splitlink RTT packet build failed");
-        benchmark_schedule_next(
-            K_MSEC(CONFIG_SPLITLINK_BENCHMARK_INTERVAL_MS));
+        benchmark_schedule_next(K_MSEC(CONFIG_SPLITLINK_BENCHMARK_INTERVAL_MS));
         return;
     }
 
@@ -281,7 +285,6 @@ static void benchmark_work_handler(struct k_work *work) {
         ATOMIC_STORE(&benchmark_inflight, false);
         LOG_ERR("Splitlink RTT send failed: %d", err);
     }
-
 }
 #endif // CONFIG_SPLITLINK_BENCHMARK && CONFIG_SPLITLINK_SYNC_MASTER
 
@@ -372,12 +375,11 @@ void tx_slot_work_handler(struct k_work *work) {
         slot->pending_packet_ready = true;
     }
 
-    packet_len =
-        YKB_PROTOCOL_HEADER_SIZE +
-        ykb_protocol_payload_len_for_index(
-            slot->pending_packet.header.total_len,
-            slot->pending_packet.header.packet_idx,
-            slot->pending_packet.header.packet_count);
+    packet_len = YKB_PROTOCOL_HEADER_SIZE +
+                 ykb_protocol_payload_len_for_index(
+                     slot->pending_packet.header.total_len,
+                     slot->pending_packet.header.packet_idx,
+                     slot->pending_packet.header.packet_count);
 
     err = splitlink_send((uint8_t *)&slot->pending_packet, packet_len);
     if (err) {
@@ -450,9 +452,9 @@ static void on_receive_cb(uint8_t *data, size_t data_len) {
 
 #if CONFIG_SPLITLINK_BENCHMARK
     if (id == BENCHMARK_SLOT_ID) {
-        if (packet.header.packet_count != 1 ||
-            packet.header.packet_idx != 0 ||
-            packet.header.total_len != sizeof(struct splitlink_benchmark_payload)) {
+        if (packet.header.packet_count != 1 || packet.header.packet_idx != 0 ||
+            packet.header.total_len !=
+                sizeof(struct splitlink_benchmark_payload)) {
             LOG_ERR("Invalid splitlink RTT packet");
             return;
         }
@@ -468,8 +470,7 @@ static void on_receive_cb(uint8_t *data, size_t data_len) {
         memcpy(&sample, packet.payload, sizeof(sample));
         ATOMIC_STORE(&benchmark_inflight, false);
         benchmark_log_sample(&sample);
-        benchmark_schedule_next(
-            K_MSEC(CONFIG_SPLITLINK_BENCHMARK_INTERVAL_MS));
+        benchmark_schedule_next(K_MSEC(CONFIG_SPLITLINK_BENCHMARK_INTERVAL_MS));
         return;
 #endif // CONFIG_SPLITLINK_SYNC_SLAVE / CONFIG_SPLITLINK_SYNC_MASTER
     }

@@ -1,6 +1,10 @@
-#include <subsys/kb_handler_internal_api.h>
+#include "splitlink_sync_private.h"
 #include <subsys/splitlink_sync.h>
+
+#include <subsys/kb_handler_internal_api.h>
 #include <subsys/ykb_battsense.h>
+
+#include <drivers/kscan.h>
 
 #include <stdatomic.h>
 #include <zephyr/kernel.h>
@@ -24,43 +28,17 @@ static void send_values_work_handler(struct k_work *work) {
     splitlink_sync_send_values(values, CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE);
 }
 
-static void on_new_value(uint16_t idx, uint16_t value) {
-    if (idx >= CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE) {
-        LOG_WRN("Ignoring out-of-range slave key value idx %u", idx);
-        return;
-    }
-
-    values[idx] = value;
-    bool expected = false;
-    if (atomic_compare_exchange_strong_explicit(&send_values_pending, &expected,
-                                                true, memory_order_relaxed,
-                                                memory_order_relaxed)) {
-        k_work_schedule(&send_values_work, K_MSEC(2));
-    }
-}
-
-static void on_event(uint16_t idx, bool pressed) {
-    if (idx >= CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE) {
-        LOG_WRN("Ignoring out-of-range slave key event idx %u", idx);
-        return;
-    }
-
-    values[idx] = pressed;
-}
-
+#if CONFIG_YKB_BATTSENSE
 static void on_battery_state_changed(ykb_battsense_state_t state) {
     battery_state.percentage = state.percentage;
     battery_state.charge_status = (uint8_t)state.charge_status;
     splitlink_sync_send_battery_state(&battery_state);
 }
 
-#if CONFIG_YKB_BATTSENSE
 static YKB_BATTSENSE_DEFINE(splitlink_sync_slave_battery_transport) = {
     .on_state_changed = on_battery_state_changed,
-    .on_low_percentage = on_battery_state_changed,
-    .on_critical_percentage = on_battery_state_changed,
 };
-#endif
+#endif // CONFIG_YKB_BATTSENSE
 
 void splitlink_sync_settings_received(const kb_settings_t *settings) {
     int err = kb_settings_apply(settings);
@@ -97,7 +75,8 @@ void splitlink_sync_scripts_manifest_received(
             continue;
         }
 
-        if ((manifest->slots[slot].occupied ? true : false) != slot_data.occupied ||
+        if ((manifest->slots[slot].occupied ? true : false) !=
+                slot_data.occupied ||
             manifest->slots[slot].size != slot_data.size ||
             manifest->slots[slot].crc32 != local_crc32) {
             request.bitmap[slot / 8U] |= BIT(slot % 8U);
@@ -124,7 +103,8 @@ void splitlink_sync_script_slot_received(
     memcpy(&script_payload, &slot_packet->payload, sizeof(script_payload));
     err = ykb_backlight_set_script_slot(slot_packet->slot, &script_payload);
     if (err) {
-        LOG_ERR("ykb_backlight_set_script_slot(%u): %d", slot_packet->slot, err);
+        LOG_ERR("ykb_backlight_set_script_slot(%u): %d", slot_packet->slot,
+                err);
     }
 }
 
@@ -136,14 +116,13 @@ void splitlink_sync_on_connect() {
     if (!ykb_battsense_get_state(&state)) {
         on_battery_state_changed(state);
     }
-#endif
+#endif // CONFIG_YKB_BATTSENSE
 }
 
-void splitlink_sync_on_disconnect() {
-    LOG_INF("SplitLink disconnected");
-}
+void splitlink_sync_on_disconnect() { LOG_INF("SplitLink disconnected"); }
 
-void splitlink_sync_battery_state_received(const splitlink_battery_state_t *state) {
+void splitlink_sync_battery_state_received(
+    const splitlink_battery_state_t *state) {
     ARG_UNUSED(state);
 }
 
@@ -155,7 +134,8 @@ int splitlink_sync_slave_attach_kb_handler(void) {
         return err;
     }
 
-    err = kb_handler_validate_kscan_topology(CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE);
+    err =
+        kb_handler_validate_kscan_topology(CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE);
     if (err) {
         return err;
     }
@@ -163,10 +143,22 @@ int splitlink_sync_slave_attach_kb_handler(void) {
     return splitlink_sync_init();
 }
 
-void splitlink_sync_slave_on_local_key_event(uint16_t idx, bool pressed) {
-    on_event(idx, pressed);
+static void on_new_value(uint16_t idx, uint16_t value) {
+    if (idx >= CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE) {
+        LOG_WRN("Ignoring out-of-range slave key value idx %u", idx);
+        return;
+    }
+
+    values[idx] = value;
+    bool expected = false;
+    if (atomic_compare_exchange_strong_explicit(&send_values_pending, &expected,
+                                                true, memory_order_relaxed,
+                                                memory_order_relaxed)) {
+        // TODO: do we really need 2ms here?
+        k_work_schedule(&send_values_work, K_MSEC(0));
+    }
 }
 
-void splitlink_sync_slave_on_local_value(uint16_t idx, uint16_t value) {
-    on_new_value(idx, value);
-}
+KSCAN_CB_DEFINE(splitlink_sync_slave) = {
+    .on_new_value = on_new_value,
+};
