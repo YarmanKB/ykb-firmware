@@ -13,7 +13,7 @@ class YkbBuild(WestCommand):
         super().__init__(
             "ykb-build",
             "smart YKB board build",
-            "Build a YKB board, resolving split boards to the left-half sysbuild entrypoint.",
+            "Build a YKB board, expanding split boards into left/right builds.",
             accepts_unknown_args=True,
         )
 
@@ -38,7 +38,7 @@ class YkbBuild(WestCommand):
         parser.add_argument(
             "-d",
             "--build-dir",
-            help="Optional build directory passed through to `west build -d`",
+            help="Optional build directory for single-target builds only",
         )
         parser.add_argument(
             "-p",
@@ -69,47 +69,65 @@ class YkbBuild(WestCommand):
         if not source_dir.exists():
             self.die(f"source directory does not exist: {source_dir}")
 
-        resolved_board = self._resolve_board(repo_root, args.board)
+        passthrough_args = list(unknown_args)
+        if passthrough_args and passthrough_args[0] == "--":
+            passthrough_args = passthrough_args[1:]
 
-        cmd = ["west", "build", str(source_dir), "-b", resolved_board]
-        if args.build_dir:
-            cmd.extend(["-d", args.build_dir])
-        if args.pristine:
+        build_targets = self._resolve_build_targets(repo_root, args.board,
+                                                    args.build_dir)
+
+        if len(build_targets) > 1 and args.build_dir:
+            self.die("--build-dir cannot be used with split board auto-expansion")
+
+        commands = [
+            self._build_command(source_dir, board, build_dir, args.pristine,
+                                args.debug, passthrough_args)
+            for board, build_dir in build_targets
+        ]
+
+        for board, build_dir, cmd in commands:
+            self.inf(f"resolved board: {board}")
+            self.inf(f"build dir: {build_dir}")
+            self.inf("command: " + " ".join(cmd))
+
+        if args.dry_run:
+            return
+
+        for board, build_dir, cmd in commands:
+            result = subprocess.run(cmd, cwd=repo_root)
+            if result.returncode != 0:
+                self.die(
+                    f"`west build` failed for board '{board}' in '{build_dir}' with exit code {result.returncode}"
+                )
+
+    def _build_command(self, source_dir: Path, board: str, build_dir: str,
+                       pristine: bool, debug: bool, passthrough_args):
+        cmd = ["west", "build", str(source_dir), "-b", board, "-d", build_dir]
+        if pristine:
             cmd.append("--pristine")
 
         cmake_args = []
-        if args.debug:
+        if debug:
             debug_conf = source_dir / "conf" / "debug.conf"
             if not debug_conf.exists():
                 self.die(f"debug config does not exist: {debug_conf}")
             cmake_args.append(f"-DEXTRA_CONF_FILE={debug_conf}")
-
-        passthrough_args = list(unknown_args)
-        if passthrough_args and passthrough_args[0] == "--":
-            passthrough_args = passthrough_args[1:]
 
         if cmake_args or passthrough_args:
             cmd.append("--")
             cmd.extend(cmake_args)
             cmd.extend(passthrough_args)
 
-        self.inf(f"resolved board: {resolved_board}")
-        self.inf("command: " + " ".join(cmd))
+        return board, build_dir, cmd
 
-        if args.dry_run:
-            return
-
-        result = subprocess.run(cmd, cwd=repo_root)
-        if result.returncode != 0:
-            self.die(f"`west build` failed with exit code {result.returncode}")
-
-    def _resolve_board(self, repo_root: Path, board: str) -> str:
+    def _resolve_build_targets(self, repo_root: Path, board: str,
+                               build_dir: str | None):
         if "/" in board:
-            return board
+            return [(board, self._default_build_dir(board, build_dir))]
 
         board_dirs = sorted((repo_root / "boards").glob(f"*/{board}"))
         if not board_dirs:
-            return board
+            return [(board, build_dir or "build")]
         if len(board_dirs) > 1:
             self.die(f"board '{board}' is ambiguous; matching directories: " +
                      ", ".join(str(path) for path in board_dirs))
@@ -131,11 +149,23 @@ class YkbBuild(WestCommand):
         ]
 
         if len(split_pairs) == 1:
-            return f"{board}/{split_pairs[0]}"
+            base_qualifier = split_pairs[0][:-len("/left")]
+            left_board = f"{board}/{base_qualifier}/left"
+            right_board = f"{board}/{base_qualifier}/right"
+            return [(left_board, "build-left"), (right_board, "build-right")]
         if len(split_pairs) > 1:
             self.die(
                 f"board '{board}' has multiple split left variants; use a fully qualified target. "
                 f"Candidates: {', '.join(f'{board}/{qualifier}' for qualifier in split_pairs)}"
             )
 
-        return board
+        return [(board, build_dir or "build")]
+
+    def _default_build_dir(self, board: str, build_dir: str | None) -> str:
+        if build_dir:
+            return build_dir
+        if board.endswith("/left"):
+            return "build-left"
+        if board.endswith("/right"):
+            return "build-right"
+        return "build"
