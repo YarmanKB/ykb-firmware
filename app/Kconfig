@@ -25,3 +25,8 @@ config YKB_BACKLIGHT
 module = APP
 module-str = APP
 source "subsys/logging/Kconfig.template.log_config"
+
+# MCUboot sysbuild supplies this value even when the application does not
+# enable Zephyr's DFU image manager.
+config MCUBOOT_UPDATE_FOOTER_SIZE
+	hex "Estimated MCUboot update footer size"
