@@ -11,6 +11,6 @@ if KSCAN_CHANNELS
 
     config KSCAN_CHANNELS_THREAD_PRIORITY
         int "KScan Channels thread priority (each channel)"
-        default 15
+        default 4
 
 endif # KSCAN_CHANNELS

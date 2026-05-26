@@ -2,6 +2,8 @@
 
 #include "kscan_common.h"
 
+#include <subsys/ykb_metrics.h>
+
 #include <zephyr/drivers/gpio.h>
 
 LOG_MODULE_REGISTER(kscan_enables, CONFIG_KSCAN_LOG_LEVEL);
@@ -52,6 +54,7 @@ static void kscan_enables_thread(void *kscan_dev, void *_, void *__) {
     memset(is_pressed, 0, sizeof(is_pressed));
 
     while (true) {
+        uint32_t scan_start = k_cycle_get_32();
         for (uint16_t i = 0; i < cfg->key_amount; ++i) {
             const struct gpio_dt_spec *en = &cfg->enables[i];
             err = gpio_pin_set_dt(en, 1);
@@ -73,8 +76,11 @@ static void kscan_enables_thread(void *kscan_dev, void *_, void *__) {
                     LOG_WRN("Unable to set GPIO pin (%s:%d) (err %d)",
                             en->port->name, en->pin, err);
                 }
+                ykb_metrics_kscan_read_error(dev, 0U);
                 return;
             }
+            ykb_metrics_kscan_sample(dev, 0U, cfg->idx_offset + i, val,
+                                     cfg->channel.resolution);
             STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
                 if (callbacks->on_new_value) {
                     callbacks->on_new_value(cfg->idx_offset + i, val);
@@ -88,6 +94,7 @@ static void kscan_enables_thread(void *kscan_dev, void *_, void *__) {
                     }
                 }
                 is_pressed[i] = true;
+                ykb_metrics_kscan_transition(dev, 0U, true);
             } else if (val < data->thresholds[i] && is_pressed[i]) {
                 STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
                     if (callbacks->on_event) {
@@ -95,6 +102,7 @@ static void kscan_enables_thread(void *kscan_dev, void *_, void *__) {
                     }
                 }
                 is_pressed[i] = false;
+                ykb_metrics_kscan_transition(dev, 0U, false);
             }
 
             err = gpio_pin_set_dt(en, 0);
@@ -104,6 +112,8 @@ static void kscan_enables_thread(void *kscan_dev, void *_, void *__) {
                 return;
             }
         }
+        ykb_metrics_kscan_scan_done(dev, 0U, cfg->key_amount,
+                                    k_cycle_get_32() - scan_start);
     }
 }
 

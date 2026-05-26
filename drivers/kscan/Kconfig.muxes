@@ -12,6 +12,6 @@ if KSCAN_MUXES
 
     config KSCAN_MUXES_THREAD_PRIORITY
         int "KScan MUXes thread priority (each channel)"
-        default 15
+        default 4
 
 endif # KSCAN_MUXES

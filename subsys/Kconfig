@@ -8,5 +8,6 @@ menu "YKB Subsystems"
     rsource "usb_connect/Kconfig"
     rsource "kb_handler/Kconfig"
     rsource "ykb_backlight/Kconfig"
+    rsource "ykb_metrics/Kconfig"
 
 endmenu

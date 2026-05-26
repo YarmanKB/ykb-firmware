@@ -44,7 +44,7 @@ if KB_HANDLER
 
     config KB_HANDLER_THREAD_PRIORITY
         int "KB Handler thread priority"
-        default 15
+        default 9
 
     config KB_HANDLER_REPORT_ROLLOVER
         bool "Enable rollover error when more than 6 keys are pressed at once"

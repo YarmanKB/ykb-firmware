@@ -1,6 +1,7 @@
 #include "kb_handler_private.h"
 
 #include <dt-bindings/kb-handler/kb-key-codes.h>
+#include <subsys/ykb_metrics.h>
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -671,6 +672,7 @@ static inline void send_kb_report_if_changed(struct kbh_runtime_state *st) {
     if (!kb_reports_equal(&st->kb_report, &st->prev_kb_report)) {
         kb_handler_transport_send_kb_report(&st->kb_report,
                                             st->settings->kbh_prio);
+        ykb_metrics_report_sent(YKB_METRICS_REPORT_KBD);
         st->prev_kb_report = st->kb_report;
     }
 }
@@ -701,6 +703,7 @@ static inline void send_mouse_report_if_changed(struct kbh_runtime_state *st) {
              KBH_MOUSEEMU_REPEAT_INTERVAL_MS)) {
         kb_handler_transport_send_mouse_report(&st->mouse_report,
                                                st->settings->kbh_prio);
+        ykb_metrics_report_sent(YKB_METRICS_REPORT_MOUSE);
         st->prev_mouse_report = st->mouse_report;
         st->last_mouse_report_ms = now_ms;
     }
@@ -746,6 +749,7 @@ static void send_race_report_if_changed(struct kbh_runtime_state *st) {
     if (!kb_reports_equal(&st->kb_report, &st->prev_kb_report)) {
         kb_handler_transport_send_kb_report(&st->kb_report,
                                             st->settings->kbh_prio);
+        ykb_metrics_report_sent(YKB_METRICS_REPORT_KBD);
         st->prev_kb_report = st->kb_report;
     }
 }
@@ -764,8 +768,10 @@ static inline void reset_handler_state(struct kbh_runtime_state *st) {
     st->mouse_wheel_remainder = 0.0;
 
     kb_handler_transport_send_kb_report(&st->kb_report, st->settings->kbh_prio);
+    ykb_metrics_report_sent(YKB_METRICS_REPORT_KBD);
     kb_handler_transport_send_mouse_report(&st->mouse_report,
                                            st->settings->kbh_prio);
+    ykb_metrics_report_sent(YKB_METRICS_REPORT_MOUSE);
 
     st->prev_kb_report = st->kb_report;
     st->prev_mouse_report = st->mouse_report;
@@ -1067,7 +1073,10 @@ static void kb_handler_on_settings_update(const kb_settings_t *settings) {
         thread_started = true;
     }
 
-    if (k_msgq_put(&kbh_core_msgq, &msg, K_NO_WAIT)) {
+    int err = k_msgq_put(&kbh_core_msgq, &msg, K_NO_WAIT);
+    ykb_metrics_kb_msgq_put(YKB_METRICS_KB_MSG_SETTINGS_SYNC, err,
+                            k_msgq_num_used_get(&kbh_core_msgq));
+    if (err) {
         LOG_WRN("Event settings sync skipped");
     }
 }
@@ -1112,8 +1121,11 @@ void kb_handler_core_handle_key_event(uint16_t key_index, bool pressed) {
         .key = key_index,
         .status = pressed,
     };
+    int err = k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT);
 
-    if (k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT)) {
+    ykb_metrics_kb_msgq_put(YKB_METRICS_KB_MSG_KEY, err,
+                            k_msgq_num_used_get(&kbh_core_msgq));
+    if (err) {
         LOG_WRN("Key event dropped for key %u", key_index);
     }
 }
@@ -1129,7 +1141,9 @@ void kb_handler_core_handle_value(uint16_t key_index, uint16_t value) {
         values[key_index] = value;
     }
 
-    k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT);
+    int err = k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT);
+    ykb_metrics_kb_msgq_put(YKB_METRICS_KB_MSG_VALUE, err,
+                            k_msgq_num_used_get(&kbh_core_msgq));
 }
 
 void kb_handler_core_handle_slave_values(const uint16_t *slave_values,
@@ -1160,7 +1174,10 @@ void kb_handler_core_handle_slave_values(const uint16_t *slave_values,
         return;
     }
 
-    if (k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT)) {
+    int err = k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT);
+    ykb_metrics_kb_msgq_put(YKB_METRICS_KB_MSG_SLAVE_VALUES, err,
+                            k_msgq_num_used_get(&kbh_core_msgq));
+    if (err) {
         atomic_store_explicit(&slave_values_msg_pending, false,
                               memory_order_relaxed);
         LOG_WRN("Slave values event dropped");
@@ -1171,8 +1188,11 @@ void kb_handler_core_handle_slave_reset(void) {
     struct kbh_thread_msg data = {
         .type = KBH_THREAD_MSG_SLAVE_KEYS_RESET,
     };
+    int err = k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT);
 
-    if (k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT)) {
+    ykb_metrics_kb_msgq_put(YKB_METRICS_KB_MSG_SLAVE_RESET, err,
+                            k_msgq_num_used_get(&kbh_core_msgq));
+    if (err) {
         LOG_WRN("Slave reset event dropped");
     }
 }

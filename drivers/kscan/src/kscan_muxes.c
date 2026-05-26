@@ -3,6 +3,7 @@
 #include "kscan_common.h"
 
 #include <drivers/mux.h>
+#include <subsys/ykb_metrics.h>
 
 LOG_MODULE_REGISTER(kscan_muxes, CONFIG_KSCAN_LOG_LEVEL);
 
@@ -88,15 +89,20 @@ static void kscan_muxes_thread(void *kscan_dev, void *chan_index, void *_) {
     }
 
     while (true) {
+        uint32_t scan_start = k_cycle_get_32();
         for (int i = 0; i < mux_channels; ++i) {
             uint16_t val = 0;
             err = read_io_channel(&chan, &val);
             if (err < 0) {
                 LOG_ERR("[%d] Could not read ADC channel '%d' (%d)", chan_idx,
                         chan.channel_id, err);
+                ykb_metrics_kscan_read_error(dev, chan_idx);
                 goto cleanup;
             }
             uint16_t kscan_offset = chan_offset + i;
+            ykb_metrics_kscan_sample(dev, chan_idx,
+                                     cfg->idx_offset + kscan_offset, val,
+                                     chan.resolution);
             STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
                 if (callbacks->on_new_value) {
                     callbacks->on_new_value(cfg->idx_offset + kscan_offset,
@@ -112,6 +118,7 @@ static void kscan_muxes_thread(void *kscan_dev, void *chan_index, void *_) {
                     }
                 }
                 is_pressed[i] = true;
+                ykb_metrics_kscan_transition(dev, chan_idx, true);
             } else if (val < data->thresholds[kscan_offset] && is_pressed[i]) {
                 STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
                     if (callbacks->on_event) {
@@ -120,6 +127,7 @@ static void kscan_muxes_thread(void *kscan_dev, void *chan_index, void *_) {
                     }
                 }
                 is_pressed[i] = false;
+                ykb_metrics_kscan_transition(dev, chan_idx, false);
             }
             err = mux_select_next(mux);
             if (err < 0) {
@@ -129,6 +137,8 @@ static void kscan_muxes_thread(void *kscan_dev, void *chan_index, void *_) {
             }
             k_usleep(cfg->settle_us);
         }
+        ykb_metrics_kscan_scan_done(dev, chan_idx, mux_channels,
+                                    k_cycle_get_32() - scan_start);
     }
 
 cleanup:

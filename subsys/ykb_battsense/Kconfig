@@ -42,7 +42,7 @@ if YKB_BATTSENSE
 
     config YKB_BATTSENSE_THREAD_PRIORITY
         int "BattSense thread priority"
-        default 15
+        default 14
 
     config YKB_BATTSENSE_THREAD_STACK_SIZE
         int "BattSense thread stack size"

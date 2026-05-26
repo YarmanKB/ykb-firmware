@@ -1,0 +1,39 @@
+menuconfig YKB_METRICS
+    bool "Enable YKB runtime metrics"
+    default n
+    select LOG
+    help
+      Collect lightweight runtime counters for kscan, keyboard handler, and
+      HID report paths.
+
+if YKB_METRICS
+
+    module = YKB_METRICS
+    module-str = ykb_metrics
+    source "subsys/logging/Kconfig.template.log_config"
+
+    config YKB_METRICS_KSCAN_UNIT_MAX
+        int "Maximum tracked kscan scan units"
+        default 12
+        range 1 64
+        help
+          Number of distinct kscan device/unit pairs to track. A kscan-muxes
+          device uses one unit per mux, kscan-channels uses one unit per ADC
+          channel, and kscan-enables uses one unit for the device.
+
+    config YKB_METRICS_KEY_MAX
+        int "Maximum tracked key indices"
+        default 128
+        range 1 512
+
+    config YKB_METRICS_LOG
+        bool "Periodically log metrics"
+        default y
+
+    config YKB_METRICS_LOG_INTERVAL_MS
+        int "Metrics log interval in ms"
+        depends on YKB_METRICS_LOG
+        default 1000
+        range 100 60000
+
+endif # YKB_METRICS

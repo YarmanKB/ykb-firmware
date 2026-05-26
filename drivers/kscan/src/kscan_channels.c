@@ -2,6 +2,8 @@
 
 #include "kscan_common.h"
 
+#include <subsys/ykb_metrics.h>
+
 LOG_MODULE_REGISTER(kscan_channels, CONFIG_KSCAN_LOG_LEVEL);
 
 #define KSCAN_THRESHOLD_INACTIVE UINT16_MAX
@@ -40,13 +42,17 @@ static void kscan_channels_thread(void *device, void *chan_idx, void *__) {
     bool is_pressed = false;
 
     while (true) {
+        uint32_t scan_start = k_cycle_get_32();
         uint16_t val = 0;
         int err = read_io_channel(&chan, &val);
         if (err < 0) {
             LOG_ERR("[%d] Could not read ADC channel '%d' (%d)", idx,
                     chan.channel_id, err);
+            ykb_metrics_kscan_read_error(dev, idx);
             return;
         }
+        ykb_metrics_kscan_sample(dev, idx, cfg->idx_offset + idx, val,
+                                  chan.resolution);
         STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
             if (callbacks->on_new_value) {
                 callbacks->on_new_value(cfg->idx_offset + idx, val);
@@ -61,6 +67,7 @@ static void kscan_channels_thread(void *device, void *chan_idx, void *__) {
                 }
             }
             is_pressed = true;
+            ykb_metrics_kscan_transition(dev, idx, true);
         } else if (val < data->thresholds[idx] && is_pressed) {
             STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
                 if (callbacks->on_event) {
@@ -68,7 +75,10 @@ static void kscan_channels_thread(void *device, void *chan_idx, void *__) {
                 }
             }
             is_pressed = false;
+            ykb_metrics_kscan_transition(dev, idx, false);
         }
+        ykb_metrics_kscan_scan_done(dev, idx, 1U,
+                                    k_cycle_get_32() - scan_start);
         k_usleep(cfg->settle_us);
     }
     return;
