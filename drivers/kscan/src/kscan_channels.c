@@ -14,7 +14,6 @@ struct kscan_channels_config {
 
     const uint32_t settle_us;
     const uint16_t idx_offset;
-
 };
 
 struct kscan_channels_data {
@@ -48,11 +47,11 @@ static void kscan_channels_thread(void *device, void *chan_idx, void *__) {
         if (err < 0) {
             LOG_ERR("[%d] Could not read ADC channel '%d' (%d)", idx,
                     chan.channel_id, err);
-            ykb_metrics_kscan_read_error(dev, idx);
+            YKB_METRICS_KSCAN_READ_ERROR(dev, idx);
             return;
         }
-        ykb_metrics_kscan_sample(dev, idx, cfg->idx_offset + idx, val,
-                                  chan.resolution);
+        YKB_METRICS_KSCAN_SAMPLE(dev, idx, cfg->idx_offset + idx, val,
+                                 chan.resolution);
         STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
             if (callbacks->on_new_value) {
                 callbacks->on_new_value(cfg->idx_offset + idx, val);
@@ -67,7 +66,7 @@ static void kscan_channels_thread(void *device, void *chan_idx, void *__) {
                 }
             }
             is_pressed = true;
-            ykb_metrics_kscan_transition(dev, idx, true);
+            YKB_METRICS_KSCAN_TRANSITION(dev, idx, true);
         } else if (val < data->thresholds[idx] && is_pressed) {
             STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
                 if (callbacks->on_event) {
@@ -75,9 +74,9 @@ static void kscan_channels_thread(void *device, void *chan_idx, void *__) {
                 }
             }
             is_pressed = false;
-            ykb_metrics_kscan_transition(dev, idx, false);
+            YKB_METRICS_KSCAN_TRANSITION(dev, idx, false);
         }
-        ykb_metrics_kscan_scan_done(dev, idx, 1U,
+        YKB_METRICS_KSCAN_SCAN_DONE(dev, idx, 1U,
                                     k_cycle_get_32() - scan_start);
         k_usleep(cfg->settle_us);
     }
@@ -223,7 +222,8 @@ static int kscan_channels_init(const struct device *dev) {
     static struct k_thread                                                     \
         __kscan_channels_threads__##inst[__kscan_channels_cnt__##inst] = {};   \
     static uint16_t                                                            \
-        __kscan_channels_tresholds__##inst[__kscan_channels_cnt__##inst] = {0}; \
+        __kscan_channels_tresholds__##inst[__kscan_channels_cnt__##inst] = {   \
+            0};                                                                \
     static uint16_t                                                            \
         __kscan_channels_chan_idxs__##inst[__kscan_channels_cnt__##inst] = {   \
             DT_INST_FOREACH_PROP_ELEM(inst, io_channels,                       \

@@ -215,7 +215,8 @@ static void build_layer_keys(const kb_settings_t *settings,
     }
 }
 
-static bool is_any_fn_pressed(const struct kbh_runtime_state *st, uint16_t key) {
+static bool is_any_fn_pressed(const struct kbh_runtime_state *st,
+                              uint16_t key) {
     for (uint8_t i = 0; i < st->fn_keys_count; ++i) {
         uint16_t fn_key = st->fn_keys[i];
 
@@ -278,7 +279,8 @@ static bool find_next_occupied_script_slot(uint16_t current, int step,
     }
 
     for (int32_t attempt = 0; attempt < count; ++attempt) {
-        int32_t idx = ((int32_t)current + count + ((attempt + 1) * step)) % count;
+        int32_t idx =
+            ((int32_t)current + count + ((attempt + 1) * step)) % count;
 
         if (ykb_backlight_get_script_slot((uint16_t)idx, &slot) == 0 &&
             slot.occupied && slot.size > 0U) {
@@ -299,8 +301,8 @@ static void mutate_bl_next_script(kb_settings_t *settings, void *user_data) {
     ARG_UNUSED(user_data);
     uint16_t next_slot;
 
-    if (find_next_occupied_script_slot(settings->backlight.active_script_index, 1,
-                                       &next_slot)) {
+    if (find_next_occupied_script_slot(settings->backlight.active_script_index,
+                                       1, &next_slot)) {
         settings->backlight.active_script_index = next_slot;
     }
 }
@@ -309,8 +311,8 @@ static void mutate_bl_prev_script(kb_settings_t *settings, void *user_data) {
     ARG_UNUSED(user_data);
     uint16_t prev_slot;
 
-    if (find_next_occupied_script_slot(settings->backlight.active_script_index, -1,
-                                       &prev_slot)) {
+    if (find_next_occupied_script_slot(settings->backlight.active_script_index,
+                                       -1, &prev_slot)) {
         settings->backlight.active_script_index = prev_slot;
     }
 }
@@ -321,7 +323,8 @@ static void mutate_bl_brightness_up(kb_settings_t *settings, void *user_data) {
         MIN(settings->backlight.brightness + 0.1f, 1.0f);
 }
 
-static void mutate_bl_brightness_down(kb_settings_t *settings, void *user_data) {
+static void mutate_bl_brightness_down(kb_settings_t *settings,
+                                      void *user_data) {
     ARG_UNUSED(user_data);
     settings->backlight.brightness =
         MAX(settings->backlight.brightness - 0.1f, 0.0f);
@@ -520,11 +523,10 @@ static inline int8_t clamp_s8(double v) {
 #define KB_MOUSEEMU_MOVE_SCALE_MAX 100U
 #define KB_MOUSEEMU_SCROLL_SCALE_MAX 8U
 
-static inline uint16_t key_value_from_minimum_range_scaled(uint16_t current_value,
-                                                           uint16_t minimum,
-                                                           uint16_t maximum,
-                                                           uint16_t deadzone,
-                                                           uint16_t scale_max) {
+static inline uint16_t
+key_value_from_minimum_range_scaled(uint16_t current_value, uint16_t minimum,
+                                    uint16_t maximum, uint16_t deadzone,
+                                    uint16_t scale_max) {
     uint32_t baseline = (uint32_t)minimum + (uint32_t)deadzone;
     uint32_t current;
     uint32_t span;
@@ -565,13 +567,12 @@ static inline uint16_t key_value_from_minimum_range(uint16_t current_value,
         current_value, minimum, maximum, deadzone, KB_MOUSEEMU_MOVE_SCALE_MAX);
 }
 
-static inline uint16_t key_scroll_value_from_minimum_range(uint16_t current_value,
-                                                           uint16_t minimum,
-                                                           uint16_t maximum,
-                                                           uint16_t deadzone) {
-    return key_value_from_minimum_range_scaled(
-        current_value, minimum, maximum, deadzone,
-        KB_MOUSEEMU_SCROLL_SCALE_MAX);
+static inline uint16_t
+key_scroll_value_from_minimum_range(uint16_t current_value, uint16_t minimum,
+                                    uint16_t maximum, uint16_t deadzone) {
+    return key_value_from_minimum_range_scaled(current_value, minimum, maximum,
+                                               deadzone,
+                                               KB_MOUSEEMU_SCROLL_SCALE_MAX);
 }
 
 static inline double mouseemu_scroll_delta(kb_settings_t *settings,
@@ -589,12 +590,10 @@ static inline double mouseemu_scroll_delta(kb_settings_t *settings,
     return (double)(up - down) * emu->scroll_k;
 }
 
-static inline uint16_t mouseemu_vector_value(kb_settings_t *settings,
-                                             uint16_t *current_values,
-                                             kb_mouseemu_settings_t *emu,
-                                             uint8_t left_vec_idx,
-                                             uint8_t straight_vec_idx,
-                                             uint8_t right_vec_idx) {
+static inline uint16_t
+mouseemu_vector_value(kb_settings_t *settings, uint16_t *current_values,
+                      kb_mouseemu_settings_t *emu, uint8_t left_vec_idx,
+                      uint8_t straight_vec_idx, uint8_t right_vec_idx) {
     uint16_t straight_key_idx = emu->move_keys[straight_vec_idx];
     uint16_t straight_vec = key_value_from_minimum_range(
         current_values[straight_key_idx], settings->minimums[straight_key_idx],
@@ -636,14 +635,14 @@ static void mouseemu_value_handler(kb_settings_t *settings,
     }
 
     if (emu->move_keys_count > 0U) {
-        int32_t y_pos =
-            (int32_t)mouseemu_vector_value(settings, current_values, emu, 4, 1, 5);
-        int32_t y_neg =
-            (int32_t)mouseemu_vector_value(settings, current_values, emu, 7, 2, 6);
-        int32_t x_pos =
-            (int32_t)mouseemu_vector_value(settings, current_values, emu, 5, 3, 7);
-        int32_t x_neg =
-            (int32_t)mouseemu_vector_value(settings, current_values, emu, 6, 0, 4);
+        int32_t y_pos = (int32_t)mouseemu_vector_value(settings, current_values,
+                                                       emu, 4, 1, 5);
+        int32_t y_neg = (int32_t)mouseemu_vector_value(settings, current_values,
+                                                       emu, 7, 2, 6);
+        int32_t x_pos = (int32_t)mouseemu_vector_value(settings, current_values,
+                                                       emu, 5, 3, 7);
+        int32_t x_neg = (int32_t)mouseemu_vector_value(settings, current_values,
+                                                       emu, 6, 0, 4);
 
         report->x = clamp_s8((double)(x_pos - x_neg) * emu->move_x_k);
         report->y = clamp_s8((double)(y_neg - y_pos) * emu->move_y_k);
@@ -672,7 +671,7 @@ static inline void send_kb_report_if_changed(struct kbh_runtime_state *st) {
     if (!kb_reports_equal(&st->kb_report, &st->prev_kb_report)) {
         kb_handler_transport_send_kb_report(&st->kb_report,
                                             st->settings->kbh_prio);
-        ykb_metrics_report_sent(YKB_METRICS_REPORT_KBD);
+        YKB_METRICS_REPORT_SENT(YKB_METRICS_REPORT_KBD);
         st->prev_kb_report = st->kb_report;
     }
 }
@@ -703,7 +702,7 @@ static inline void send_mouse_report_if_changed(struct kbh_runtime_state *st) {
              KBH_MOUSEEMU_REPEAT_INTERVAL_MS)) {
         kb_handler_transport_send_mouse_report(&st->mouse_report,
                                                st->settings->kbh_prio);
-        ykb_metrics_report_sent(YKB_METRICS_REPORT_MOUSE);
+        YKB_METRICS_REPORT_SENT(YKB_METRICS_REPORT_MOUSE);
         st->prev_mouse_report = st->mouse_report;
         st->last_mouse_report_ms = now_ms;
     }
@@ -749,7 +748,7 @@ static void send_race_report_if_changed(struct kbh_runtime_state *st) {
     if (!kb_reports_equal(&st->kb_report, &st->prev_kb_report)) {
         kb_handler_transport_send_kb_report(&st->kb_report,
                                             st->settings->kbh_prio);
-        ykb_metrics_report_sent(YKB_METRICS_REPORT_KBD);
+        YKB_METRICS_REPORT_SENT(YKB_METRICS_REPORT_KBD);
         st->prev_kb_report = st->kb_report;
     }
 }
@@ -768,10 +767,10 @@ static inline void reset_handler_state(struct kbh_runtime_state *st) {
     st->mouse_wheel_remainder = 0.0;
 
     kb_handler_transport_send_kb_report(&st->kb_report, st->settings->kbh_prio);
-    ykb_metrics_report_sent(YKB_METRICS_REPORT_KBD);
+    YKB_METRICS_REPORT_SENT(YKB_METRICS_REPORT_KBD);
     kb_handler_transport_send_mouse_report(&st->mouse_report,
                                            st->settings->kbh_prio);
-    ykb_metrics_report_sent(YKB_METRICS_REPORT_MOUSE);
+    YKB_METRICS_REPORT_SENT(YKB_METRICS_REPORT_MOUSE);
 
     st->prev_kb_report = st->kb_report;
     st->prev_mouse_report = st->mouse_report;
@@ -866,7 +865,8 @@ static void handle_slave_values(struct kbh_runtime_state *st,
     }
 }
 
-static void copy_latest_slave_values(uint16_t out_values[KBH_SLAVE_VALUES_CAPACITY]) {
+static void
+copy_latest_slave_values(uint16_t out_values[KBH_SLAVE_VALUES_CAPACITY]) {
     k_spinlock_key_t key = k_spin_lock(&slave_values_lock);
     memcpy(out_values, latest_slave_values, KEY_COUNT_SLAVE * sizeof(uint16_t));
     k_spin_unlock(&slave_values_lock, key);
@@ -1049,8 +1049,8 @@ static void kb_handler_on_settings_update(const kb_settings_t *settings) {
         }
 
         err = kscan_set_thresholds(
-            kscan, (uint16_t *)&settings->thresholds[KBH_LOCAL_SETTINGS_OFFSET +
-                                                     idx_offset]);
+            kscan, (uint16_t *)&settings
+                       ->thresholds[KBH_LOCAL_SETTINGS_OFFSET + idx_offset]);
         if (err) {
             LOG_ERR("Unable to set thresholds for KScan instance %s (err %d)",
                     kscan->name, err);
@@ -1074,7 +1074,7 @@ static void kb_handler_on_settings_update(const kb_settings_t *settings) {
     }
 
     int err = k_msgq_put(&kbh_core_msgq, &msg, K_NO_WAIT);
-    ykb_metrics_kb_msgq_put(YKB_METRICS_KB_MSG_SETTINGS_SYNC, err,
+    YKB_METRICS_KB_MSGQ_PUT(YKB_METRICS_KB_MSG_SETTINGS_SYNC, err,
                             k_msgq_num_used_get(&kbh_core_msgq));
     if (err) {
         LOG_WRN("Event settings sync skipped");
@@ -1123,7 +1123,7 @@ void kb_handler_core_handle_key_event(uint16_t key_index, bool pressed) {
     };
     int err = k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT);
 
-    ykb_metrics_kb_msgq_put(YKB_METRICS_KB_MSG_KEY, err,
+    YKB_METRICS_KB_MSGQ_PUT(YKB_METRICS_KB_MSG_KEY, err,
                             k_msgq_num_used_get(&kbh_core_msgq));
     if (err) {
         LOG_WRN("Key event dropped for key %u", key_index);
@@ -1142,7 +1142,7 @@ void kb_handler_core_handle_value(uint16_t key_index, uint16_t value) {
     }
 
     int err = k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT);
-    ykb_metrics_kb_msgq_put(YKB_METRICS_KB_MSG_VALUE, err,
+    YKB_METRICS_KB_MSGQ_PUT(YKB_METRICS_KB_MSG_VALUE, err,
                             k_msgq_num_used_get(&kbh_core_msgq));
 }
 
@@ -1167,15 +1167,14 @@ void kb_handler_core_handle_slave_values(const uint16_t *slave_values,
     k_spin_unlock(&slave_values_lock, key);
     memcpy(&values[KEY_COUNT], slave_values, count * sizeof(uint16_t));
 
-    if (!atomic_compare_exchange_strong_explicit(&slave_values_msg_pending,
-                                                 &expected, true,
-                                                 memory_order_relaxed,
-                                                 memory_order_relaxed)) {
+    if (!atomic_compare_exchange_strong_explicit(
+            &slave_values_msg_pending, &expected, true, memory_order_relaxed,
+            memory_order_relaxed)) {
         return;
     }
 
     int err = k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT);
-    ykb_metrics_kb_msgq_put(YKB_METRICS_KB_MSG_SLAVE_VALUES, err,
+    YKB_METRICS_KB_MSGQ_PUT(YKB_METRICS_KB_MSG_SLAVE_VALUES, err,
                             k_msgq_num_used_get(&kbh_core_msgq));
     if (err) {
         atomic_store_explicit(&slave_values_msg_pending, false,
@@ -1190,7 +1189,7 @@ void kb_handler_core_handle_slave_reset(void) {
     };
     int err = k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT);
 
-    ykb_metrics_kb_msgq_put(YKB_METRICS_KB_MSG_SLAVE_RESET, err,
+    YKB_METRICS_KB_MSGQ_PUT(YKB_METRICS_KB_MSG_SLAVE_RESET, err,
                             k_msgq_num_used_get(&kbh_core_msgq));
     if (err) {
         LOG_WRN("Slave reset event dropped");

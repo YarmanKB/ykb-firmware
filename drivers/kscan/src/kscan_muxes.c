@@ -20,7 +20,6 @@ struct kscan_muxes_config {
     const uint16_t muxes_count;
 
     const uint32_t settle_us;
-
 };
 
 struct kscan_muxes_data {
@@ -96,11 +95,11 @@ static void kscan_muxes_thread(void *kscan_dev, void *chan_index, void *_) {
             if (err < 0) {
                 LOG_ERR("[%d] Could not read ADC channel '%d' (%d)", chan_idx,
                         chan.channel_id, err);
-                ykb_metrics_kscan_read_error(dev, chan_idx);
+                YKB_METRICS_KSCAN_READ_ERROR(dev, chan_idx);
                 goto cleanup;
             }
             uint16_t kscan_offset = chan_offset + i;
-            ykb_metrics_kscan_sample(dev, chan_idx,
+            YKB_METRICS_KSCAN_SAMPLE(dev, chan_idx,
                                      cfg->idx_offset + kscan_offset, val,
                                      chan.resolution);
             STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
@@ -118,7 +117,7 @@ static void kscan_muxes_thread(void *kscan_dev, void *chan_index, void *_) {
                     }
                 }
                 is_pressed[i] = true;
-                ykb_metrics_kscan_transition(dev, chan_idx, true);
+                YKB_METRICS_KSCAN_TRANSITION(dev, chan_idx, true);
             } else if (val < data->thresholds[kscan_offset] && is_pressed[i]) {
                 STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
                     if (callbacks->on_event) {
@@ -127,7 +126,7 @@ static void kscan_muxes_thread(void *kscan_dev, void *chan_index, void *_) {
                     }
                 }
                 is_pressed[i] = false;
-                ykb_metrics_kscan_transition(dev, chan_idx, false);
+                YKB_METRICS_KSCAN_TRANSITION(dev, chan_idx, false);
             }
             err = mux_select_next(mux);
             if (err < 0) {
@@ -137,7 +136,7 @@ static void kscan_muxes_thread(void *kscan_dev, void *chan_index, void *_) {
             }
             k_usleep(cfg->settle_us);
         }
-        ykb_metrics_kscan_scan_done(dev, chan_idx, mux_channels,
+        YKB_METRICS_KSCAN_SCAN_DONE(dev, chan_idx, mux_channels,
                                     k_cycle_get_32() - scan_start);
     }
 
@@ -317,7 +316,8 @@ static int kscan_muxes_init(const struct device *dev) {
         DT_INST_FOREACH_PROP_ELEM(inst, muxes, MUX_DEV_AND_COMMA)};            \
                                                                                \
     static uint16_t                                                            \
-        __kscan_muxes_data_thresholds__##inst[KSCAN_MUXES_CHANNELS_SUM(inst)] = {0}; \
+        __kscan_muxes_data_thresholds__##inst[KSCAN_MUXES_CHANNELS_SUM(        \
+            inst)] = {0};                                                      \
                                                                                \
     DT_INST_FOREACH_PROP_ELEM(inst, muxes, THREAD_STACK_DEFINE_IDX);           \
                                                                                \

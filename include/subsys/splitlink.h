@@ -15,15 +15,6 @@
 #error SPLITLINK_MAX_PACKET_LENGTH is not defined for the current SplitLink transport
 #endif
 
-struct splitlink_cb {
-    void (*on_receive_cb)(uint8_t *data, size_t data_len);
-    void (*connect_cb)(void);
-    void (*disconnect_cb)(void);
-};
-
-#define SPLITLINK_CB_DEFINE(name)                                              \
-    static STRUCT_SECTION_ITERABLE(splitlink_cb, __splitlink_cb_##name)
-
 struct splitlink_transport_api {
     int (*send)(uint8_t *data, size_t data_len);
 };

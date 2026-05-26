@@ -1,5 +1,7 @@
 #include <subsys/ykb_metrics.h>
 
+#include <subsys/kb_settings.h>
+
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/util.h>
@@ -39,7 +41,7 @@ struct report_metrics {
 };
 
 static struct kscan_unit_metrics kscan_units[CONFIG_YKB_METRICS_KSCAN_UNIT_MAX];
-static struct key_metrics keys[CONFIG_YKB_METRICS_KEY_MAX];
+static struct key_metrics keys[CONFIG_KB_SETTINGS_KEY_COUNT];
 static struct kb_msgq_metrics kb_msgq;
 static struct report_metrics reports;
 static struct k_spinlock registry_lock;
@@ -234,8 +236,8 @@ static void metrics_log_kscan(void) {
                 "errors=%ld/s transitions=%ld/%ld",
                 unit->dev ? unit->dev->name : "?", unit->unit_idx,
                 (long)((samples * MSEC_PER_SEC) / interval_ms),
-                (long)((scans * MSEC_PER_SEC) / interval_ms),
-                (long)avg_scan_us, (long)max_scan_us,
+                (long)((scans * MSEC_PER_SEC) / interval_ms), (long)avg_scan_us,
+                (long)max_scan_us,
                 (long)((errors * MSEC_PER_SEC) / interval_ms),
                 (long)atomic_get(&unit->press_events),
                 (long)atomic_get(&unit->release_events));

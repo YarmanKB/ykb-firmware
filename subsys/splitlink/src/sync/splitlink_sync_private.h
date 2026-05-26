@@ -36,6 +36,10 @@ typedef struct __packed {
 
 int splitlink_sync_init(void);
 
+void splitlink_sync_protocol_on_connect(void);
+void splitlink_sync_protocol_on_disconnect(void);
+void splitlink_sync_protocol_on_receive(uint8_t *data, size_t data_len);
+
 void splitlink_sync_on_connect(void);
 void splitlink_sync_on_disconnect(void);
 

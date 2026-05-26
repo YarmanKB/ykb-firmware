@@ -76,10 +76,10 @@ static void kscan_enables_thread(void *kscan_dev, void *_, void *__) {
                     LOG_WRN("Unable to set GPIO pin (%s:%d) (err %d)",
                             en->port->name, en->pin, err);
                 }
-                ykb_metrics_kscan_read_error(dev, 0U);
+                YKB_METRICS_KSCAN_READ_ERROR(dev, 0U);
                 return;
             }
-            ykb_metrics_kscan_sample(dev, 0U, cfg->idx_offset + i, val,
+            YKB_METRICS_KSCAN_SAMPLE(dev, 0U, cfg->idx_offset + i, val,
                                      cfg->channel.resolution);
             STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
                 if (callbacks->on_new_value) {
@@ -94,7 +94,7 @@ static void kscan_enables_thread(void *kscan_dev, void *_, void *__) {
                     }
                 }
                 is_pressed[i] = true;
-                ykb_metrics_kscan_transition(dev, 0U, true);
+                YKB_METRICS_KSCAN_TRANSITION(dev, 0U, true);
             } else if (val < data->thresholds[i] && is_pressed[i]) {
                 STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
                     if (callbacks->on_event) {
@@ -102,7 +102,7 @@ static void kscan_enables_thread(void *kscan_dev, void *_, void *__) {
                     }
                 }
                 is_pressed[i] = false;
-                ykb_metrics_kscan_transition(dev, 0U, false);
+                YKB_METRICS_KSCAN_TRANSITION(dev, 0U, false);
             }
 
             err = gpio_pin_set_dt(en, 0);
@@ -112,7 +112,7 @@ static void kscan_enables_thread(void *kscan_dev, void *_, void *__) {
                 return;
             }
         }
-        ykb_metrics_kscan_scan_done(dev, 0U, cfg->key_amount,
+        YKB_METRICS_KSCAN_SCAN_DONE(dev, 0U, cfg->key_amount,
                                     k_cycle_get_32() - scan_start);
     }
 }
@@ -236,8 +236,8 @@ static int kscan_enables_init(const struct device *dev) {
     static const struct adc_dt_spec __kscan_enables_adc_channel__##inst[] = {  \
         DT_INST_FOREACH_PROP_ELEM(inst, io_channels, ADC_SPEC_AND_COMMA)};     \
                                                                                \
-    static uint16_t                                                            \
-        __kscan_enables_thresholds__##inst[DT_INST_PROP_LEN(inst, enable_gpios)] = {0}; \
+    static uint16_t __kscan_enables_thresholds__##inst[DT_INST_PROP_LEN(       \
+        inst, enable_gpios)] = {0};                                            \
                                                                                \
     static uint16_t __kscan_enables_values__##inst[DT_INST_PROP_LEN(           \
         inst, enable_gpios)] = {0};                                            \

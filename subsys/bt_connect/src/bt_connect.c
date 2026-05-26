@@ -1,5 +1,7 @@
 #include <subsys/bt_connect.h>
+
 #include <subsys/splitlink_bt.h>
+#include <subsys/splitlink_sync.h>
 
 #include "hid_devices/hid_devices.h"
 
@@ -491,8 +493,8 @@ void bt_connect_set_battery_level(uint8_t percentage) {
 }
 
 #if CONFIG_BT_CONNECT_SPLIT_BAS
-void bt_connect_set_secondary_battery_state(
-    const ykb_battsense_state_t *state) {
+static void
+bt_connect_set_secondary_battery_state(ykb_battsense_state_t *state) {
     if (!state) {
         return;
     }
@@ -501,7 +503,7 @@ void bt_connect_set_secondary_battery_state(
     secondary_battery_publish();
 }
 
-void bt_connect_clear_secondary_battery_state(void) {
+static void bt_connect_clear_secondary_battery_state(void) {
     secondary_battery_level = 0U;
     secondary_battery_publish();
 }
@@ -689,5 +691,14 @@ static int bt_connect_init(void) {
 
     return 0;
 }
+
+#if CONFIG_BT_CONNECT_SPLIT_BAS
+
+SPLITLINK_SYNC_CB(bt_connect) = {
+    .on_disconnected = bt_connect_clear_secondary_battery_state,
+    .on_slave_battery_state = bt_connect_set_secondary_battery_state,
+};
+
+#endif // CONFIG_BT_CONNECT_SPLIT_BAS
 
 SYS_INIT(bt_connect_init, POST_KERNEL, CONFIG_BT_CONNECT_INIT_PRIORITY);

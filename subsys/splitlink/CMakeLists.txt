@@ -8,7 +8,7 @@ zephyr_library_sources_ifdef(CONFIG_SPLITLINK_SYNC_MASTER
 zephyr_library_sources_ifdef(CONFIG_SPLITLINK_SYNC_SLAVE
                              src/sync/splitlink_sync_slave.c)
 zephyr_library_sources_ifdef(CONFIG_SPLITLINK_SYNC_IMPL_YKB_PROTO
-                             src/sync/splitlink_sync_protocol.c)
+                             src/sync/protocol/splitlink_sync_ykb_protocol.c)
 
 add_subdirectory_ifdef(CONFIG_SPLITLINK_BT src/splitlink_bt)
 add_subdirectory_ifdef(CONFIG_SPLITLINK_YKB_ESB src/splitlink_ykb_esb)

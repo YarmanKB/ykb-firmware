@@ -1,3 +1,4 @@
+#include "sync/splitlink_sync_private.h"
 #include <subsys/splitlink.h>
 
 #include <zephyr/kernel.h>
@@ -20,27 +21,21 @@ int splitlink_register_transport(const struct splitlink_transport_api *api) {
 bool splitlink_is_ready(void) { return active_transport != NULL; }
 
 void splitlink_notify_connected(void) {
-    STRUCT_SECTION_FOREACH(splitlink_cb, callback) {
-        if (callback->connect_cb) {
-            callback->connect_cb();
-        }
-    }
+#if CONFIG_SPLITLINK_SYNC
+    splitlink_sync_protocol_on_connect();
+#endif // CONFIG_SPLITLINK_SYNC
 }
 
 void splitlink_notify_disconnected(void) {
-    STRUCT_SECTION_FOREACH(splitlink_cb, callback) {
-        if (callback->disconnect_cb) {
-            callback->disconnect_cb();
-        }
-    }
+#if CONFIG_SPLITLINK_SYNC
+    splitlink_sync_protocol_on_disconnect();
+#endif // CONFIG_SPLITLINK_SYNC
 }
 
 void splitlink_notify_receive(uint8_t *data, size_t data_len) {
-    STRUCT_SECTION_FOREACH(splitlink_cb, callback) {
-        if (callback->on_receive_cb) {
-            callback->on_receive_cb(data, data_len);
-        }
-    }
+#if CONFIG_SPLITLINK_SYNC
+    splitlink_sync_protocol_on_receive(data, data_len);
+#endif // CONFIG_SPLITLINK_SYNC
 }
 
 int splitlink_send(uint8_t *data, size_t data_len) {

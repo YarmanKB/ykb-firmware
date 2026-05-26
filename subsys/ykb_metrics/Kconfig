@@ -21,11 +21,6 @@ if YKB_METRICS
           device uses one unit per mux, kscan-channels uses one unit per ADC
           channel, and kscan-enables uses one unit for the device.
 
-    config YKB_METRICS_KEY_MAX
-        int "Maximum tracked key indices"
-        default 128
-        range 1 512
-
     config YKB_METRICS_LOG
         bool "Periodically log metrics"
         default y

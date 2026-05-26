@@ -1,10 +1,14 @@
 #ifndef SUBSYS_SPLITLINK_SYNC_H
 #define SUBSYS_SPLITLINK_SYNC_H
 
+#include <subsys/ykb_battsense.h>
+
 #include <zephyr/sys/iterable_sections.h>
 
-struct splitlink_sync_battery_notify {
-    void (*cb)();
+struct splitlink_sync_cb {
+    void (*on_connected)(void);
+    void (*on_disconnected)(void);
+    void (*on_slave_battery_state)(ykb_battsense_state_t *state);
 };
 
 // The slave keys and values should be only managed by kb_handler,
@@ -14,12 +18,13 @@ int splitlink_sync_master_attach_kb_handler(void);
 
 int splitlink_sync_slave_attach_kb_handler(void);
 
-// Battery notifications on the other hand might be used in different subsystems
+// Battery notifications, connect/disconnect on the other hand might be used
+// in different subsystems
 #if CONFIG_SPLITLINK_SYNC_MASTER
-#define SPLITLINK_SYNC_BATTERY_STATE_CB(name, cb)                              \
-    STRUCT_SECTION_ITERABLE(name, )
+#define SPLITLINK_SYNC_CB(name)                                                \
+    STRUCT_SECTION_ITERABLE(splitlink_sync_cb, splitlink_sync_cb_##name)
 #else
-#define SPLITLINK_SYNC_BATTERY_STATE_CB(name, cb)
+#define SPLITLINK_SYNC_CB(name)
 #endif // CONFIG_SPLITLINK_SYNC_MASTER
 
 #endif // SUBSYS_SPLITLINK_SYNC_H

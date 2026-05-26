@@ -1,4 +1,4 @@
-#include "splitlink_sync_private.h"
+#include "../splitlink_sync_private.h"
 #include <subsys/splitlink.h>
 #include <subsys/splitlink_sync.h>
 
@@ -435,7 +435,7 @@ out:
 #endif // CONFIG_SPLITLINK_SYNC_MASTER
 }
 
-static void on_receive_cb(uint8_t *data, size_t data_len) {
+void splitlink_sync_protocol_on_receive(uint8_t *data, size_t data_len) {
     if (!data || data_len == 0) {
         return;
     }
@@ -757,7 +757,7 @@ int splitlink_sync_init(void) {
     return 0;
 }
 
-static void on_connect(void) {
+void splitlink_sync_protocol_on_connect(void) {
     ATOMIC_STORE(&connected, true);
 #if CONFIG_SPLITLINK_BENCHMARK && CONFIG_SPLITLINK_SYNC_MASTER
     benchmark_schedule_next(K_MSEC(250));
@@ -765,7 +765,7 @@ static void on_connect(void) {
     splitlink_sync_on_connect();
 }
 
-static void on_disconnect(void) {
+void splitlink_sync_protocol_on_disconnect(void) {
     ATOMIC_STORE(&connected, false);
 #if CONFIG_SPLITLINK_BENCHMARK && CONFIG_SPLITLINK_SYNC_MASTER
     (void)k_work_cancel_delayable(&benchmark_work);
@@ -778,9 +778,3 @@ static void on_disconnect(void) {
 #endif // CONFIG_SPLITLINK_SYNC_MASTER
     splitlink_sync_on_disconnect();
 }
-
-SPLITLINK_CB_DEFINE(kb_handler_splitlink_ykb_protocol) = {
-    .on_receive_cb = on_receive_cb,
-    .connect_cb = on_connect,
-    .disconnect_cb = on_disconnect,
-};

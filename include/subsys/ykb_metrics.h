@@ -5,7 +5,6 @@
 #include <zephyr/kernel.h>
 
 #include <stdbool.h>
-#include <stdint.h>
 
 enum ykb_metrics_kb_msg_type {
     YKB_METRICS_KB_MSG_KEY = 0U,
@@ -24,6 +23,20 @@ enum ykb_metrics_report_type {
 
 #if CONFIG_YKB_METRICS
 
+#include <stdint.h>
+
+#define YKB_METRICS_KSCAN_SAMPLE(dev, unit_idx, key_idx, value, resolution)    \
+    ykb_metrics_kscan_sample(dev, unit_idx, key_idx, value, resolution)
+#define YKB_METRICS_KSCAN_READ_ERROR(dev, unit_idx)                            \
+    ykb_metrics_kscan_read_error(dev, unit_idx)
+#define YKB_METRICS_KSCAN_TRANSITION(dev, unit_idx, pressed)                   \
+    ykb_metrics_kscan_transition(dev, unit_idx, pressed)
+#define YKB_METRICS_KSCAN_SCAN_DONE(dev, unit_idx, samples, elapsed_cycles)    \
+    ykb_metrics_kscan_scan_done(dev, unit_idx, samples, elapsed_cycles)
+#define YKB_METRICS_KB_MSGQ_PUT(type, err, used)                               \
+    ykb_metrics_kb_msgq_put(type, err, used)
+#define YKB_METRICS_REPORT_SENT(type) ykb_metrics_report_sent(type)
+
 void ykb_metrics_kscan_sample(const struct device *dev, uint16_t unit_idx,
                               uint16_t key_idx, uint16_t value,
                               uint8_t resolution);
@@ -38,52 +51,29 @@ void ykb_metrics_report_sent(enum ykb_metrics_report_type type);
 
 #else
 
-static inline void ykb_metrics_kscan_sample(const struct device *dev,
-                                            uint16_t unit_idx, uint16_t key_idx,
-                                            uint16_t value,
-                                            uint8_t resolution) {
-    ARG_UNUSED(dev);
-    ARG_UNUSED(unit_idx);
-    ARG_UNUSED(key_idx);
-    ARG_UNUSED(value);
-    ARG_UNUSED(resolution);
-}
-
-static inline void ykb_metrics_kscan_read_error(const struct device *dev,
-                                                uint16_t unit_idx) {
-    ARG_UNUSED(dev);
-    ARG_UNUSED(unit_idx);
-}
-
-static inline void ykb_metrics_kscan_transition(const struct device *dev,
-                                                uint16_t unit_idx,
-                                                bool pressed) {
-    ARG_UNUSED(dev);
-    ARG_UNUSED(unit_idx);
-    ARG_UNUSED(pressed);
-}
-
-static inline void ykb_metrics_kscan_scan_done(const struct device *dev,
-                                               uint16_t unit_idx,
-                                               uint16_t samples,
-                                               uint32_t elapsed_cycles) {
-    ARG_UNUSED(dev);
-    ARG_UNUSED(unit_idx);
-    ARG_UNUSED(samples);
-    ARG_UNUSED(elapsed_cycles);
-}
-
-static inline void ykb_metrics_kb_msgq_put(enum ykb_metrics_kb_msg_type type,
-                                           int err, uint32_t used) {
-    ARG_UNUSED(type);
-    ARG_UNUSED(err);
-    ARG_UNUSED(used);
-}
-
-static inline void
-ykb_metrics_report_sent(enum ykb_metrics_report_type type) {
-    ARG_UNUSED(type);
-}
+#define YKB_METRICS_KSCAN_SAMPLE(dev, unit_idx, key_idx, value, resolution)    \
+    (void)(dev);                                                               \
+    (void)(unit_idx);                                                          \
+    (void)(key_idx);                                                           \
+    (void)(value);                                                             \
+    (void)(resolution)
+#define YKB_METRICS_KSCAN_READ_ERROR(dev, unit_idx)                            \
+    (void)(dev);                                                               \
+    (void)(unit_idx)
+#define YKB_METRICS_KSCAN_TRANSITION(dev, unit_idx, pressed)                   \
+    (void)(dev);                                                               \
+    (void)(unit_idx);                                                          \
+    (void)(pressed)
+#define YKB_METRICS_KSCAN_SCAN_DONE(dev, unit_idx, samples, elapsed_cycles)    \
+    (void)(dev);                                                               \
+    (void)(unit_idx);                                                          \
+    (void)(samples);                                                           \
+    (void)(elapsed_cycles)
+#define YKB_METRICS_KB_MSGQ_PUT(type, err, used)                               \
+    (void)(type);                                                              \
+    (void)(err);                                                               \
+    (void)(used)
+#define YKB_METRICS_REPORT_SENT(type) (void)(type)
 
 #endif // CONFIG_YKB_METRICS
 

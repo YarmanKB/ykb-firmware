@@ -52,6 +52,12 @@ void splitlink_sync_values_received(uint16_t *slave_values, uint16_t count) {
 void splitlink_sync_on_connect() {
     LOG_INF("SplitLink slave connected");
 
+    STRUCT_SECTION_FOREACH(splitlink_sync_cb, iter) {
+        if (iter->on_connected) {
+            iter->on_connected();
+        }
+    }
+
     if (!kb_handler_core_get_settings_snapshot(&splitlink_settings_tx)) {
         splitlink_sync_send_settings(&splitlink_settings_tx);
     }
@@ -63,9 +69,12 @@ void splitlink_sync_on_connect() {
 void splitlink_sync_on_disconnect() {
     LOG_WRN("SplitLink slave disconnected");
     kb_handler_core_handle_slave_reset();
-#if CONFIG_BT_CONNECT_SPLIT_BAS
-    bt_connect_clear_secondary_battery_state();
-#endif // CONFIG_BT_CONNECT_SPLIT_BAS
+
+    STRUCT_SECTION_FOREACH(splitlink_sync_cb, iter) {
+        if (iter->on_disconnected) {
+            iter->on_disconnected();
+        }
+    }
 }
 
 void splitlink_sync_on_settings_update(const kb_settings_t *settings) {
@@ -100,9 +109,12 @@ void splitlink_sync_battery_state_received(
 
     slave_state.percentage = state->percentage;
     slave_state.charge_status = (enum charger_status)state->charge_status;
-#if CONFIG_BT_CONNECT_SPLIT_BAS
-    bt_connect_set_secondary_battery_state(&slave_state);
-#endif // CONFIG_BT_CONNECT_SPLIT_BAS
+
+    STRUCT_SECTION_FOREACH(splitlink_sync_cb, iter) {
+        if (iter->on_slave_battery_state) {
+            iter->on_slave_battery_state(&slave_state);
+        }
+    }
 }
 
 int splitlink_sync_master_attach_kb_handler(void) {
