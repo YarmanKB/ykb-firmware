@@ -1,8 +1,8 @@
 #include "hid_devices.h"
 
-#include <subsys/vendor_hid_protocol.h>
 #include <subsys/kb_handler.h>
 #include <subsys/usb_connect.h>
+#include <subsys/vendor_hid_protocol.h>
 
 #include <zephyr/logging/log.h>
 
@@ -54,8 +54,6 @@ static atomic_bool boot_mode;
 
 static int usb_vendor_send_packet(const uint8_t *data, size_t len,
                                   void *user_data) {
-    ARG_UNUSED(user_data);
-
     uint8_t report[CONFIG_USB_CONNECT_MAX_VENDOR_IN_REPORT_SIZE] = {0};
     if (len > sizeof(report)) {
         return -EMSGSIZE;

@@ -8,12 +8,13 @@
 #include <zephyr/sys/util.h>
 
 #include <zephyr/ipc/ipc_service.h>
-#if DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_bt_hci_ipc), zephyr_ipc_openamp_static_vrings)
+#if DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_bt_hci_ipc),                           \
+                       zephyr_ipc_openamp_static_vrings)
 #include <openamp/rpmsg_virtio.h>
-#define IPC_BUF_SIZE                                                            \
-    DT_PROP_OR(DT_CHOSEN(zephyr_bt_hci_ipc), zephyr_buffer_size,                \
+#define IPC_BUF_SIZE                                                           \
+    DT_PROP_OR(DT_CHOSEN(zephyr_bt_hci_ipc), zephyr_buffer_size,               \
                RPMSG_BUFFER_SIZE)
-#define IPC_MEM_SIZE                                                            \
+#define IPC_MEM_SIZE                                                           \
     (DT_REG_SIZE(DT_PHANDLE(DT_CHOSEN(zephyr_bt_hci_ipc), memory_region)) / 2)
 #define MAX_IPC_BLOCKS DIV_ROUND_UP(IPC_MEM_SIZE, IPC_BUF_SIZE)
 #elif DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_bt_hci_ipc), zephyr_ipc_icbmsg)
@@ -185,10 +186,6 @@ static struct net_buf *hci_ipc_iso_recv(uint8_t *data, size_t remaining) {
 }
 
 static void queue_thread(void *p1, void *p2, void *p3) {
-    ARG_UNUSED(p1);
-    ARG_UNUSED(p2);
-    ARG_UNUSED(p3);
-
     while (1) {
         struct ipc_block_item block;
         const uint8_t *data;
@@ -307,7 +304,7 @@ static void hci_ipc_send(struct net_buf *buf, bool is_fatal_err) {
 #if defined(CONFIG_BT_CTLR_ASSERT_HANDLER)
 void bt_ctlr_assert_handle(char *file, uint32_t line) {
     /* Disable interrupts, this is unrecoverable */
-    (void)irq_lock();
+    irq_lock();
 
 #if defined(CONFIG_BT_HCI_VS_FATAL_ERROR)
     /* Generate an error event only when IPC service endpoint is already bound.
@@ -350,7 +347,7 @@ void bt_ctlr_assert_handle(char *file, uint32_t line) {
 void k_sys_fatal_error_handler(unsigned int reason,
                                const struct arch_esf *esf) {
     /* Disable interrupts, this is unrecoverable */
-    (void)irq_lock();
+    irq_lock();
 
     /* Generate an error event only when there is a stack frame and IPC service
      * endpoint is already bound.

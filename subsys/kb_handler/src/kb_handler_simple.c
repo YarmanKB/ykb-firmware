@@ -6,7 +6,6 @@ BUILD_ASSERT(KEY_COUNT_SLAVE == 0,
              "KB_HANDLER_SIMPLE does not support kb-handler-key-count-slave");
 
 KSCAN_CB_DEFINE(kbh_simple) = {
-    .on_event = kb_handler_core_handle_key_event,
     .on_new_value = kb_handler_core_handle_value,
 };
 

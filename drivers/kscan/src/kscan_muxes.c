@@ -7,8 +7,6 @@
 
 LOG_MODULE_REGISTER(kscan_muxes, CONFIG_KSCAN_LOG_LEVEL);
 
-#define KSCAN_THRESHOLD_INACTIVE UINT16_MAX
-
 struct kscan_muxes_config {
     const struct adc_dt_spec *channels;
     const uint16_t channels_count;
@@ -23,15 +21,12 @@ struct kscan_muxes_config {
 };
 
 struct kscan_muxes_data {
-    uint16_t *thresholds;
     uint16_t *values;
 
     struct k_thread *threads;
     k_thread_stack_t **stacks;
     uint16_t *chan_idxs;
 };
-
-static K_MUTEX_DEFINE(kscan_mutex);
 
 // Thread which will run for each mux/adc_chan pair
 static void kscan_muxes_thread(void *kscan_dev, void *chan_index, void *_) {
@@ -67,9 +62,6 @@ static void kscan_muxes_thread(void *kscan_dev, void *chan_index, void *_) {
                 mux->name, mux_channels);
         return;
     }
-
-    bool is_pressed[mux_channels];
-    memset(is_pressed, 0, sizeof(is_pressed));
 
     int err = 0;
     int lerr = 0;
@@ -109,25 +101,6 @@ static void kscan_muxes_thread(void *kscan_dev, void *chan_index, void *_) {
                 }
             }
             data->values[kscan_offset] = val;
-            if (val >= data->thresholds[kscan_offset] && !is_pressed[i]) {
-                STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
-                    if (callbacks->on_event) {
-                        callbacks->on_event(cfg->idx_offset + kscan_offset,
-                                            true);
-                    }
-                }
-                is_pressed[i] = true;
-                YKB_METRICS_KSCAN_TRANSITION(dev, chan_idx, true);
-            } else if (val < data->thresholds[kscan_offset] && is_pressed[i]) {
-                STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
-                    if (callbacks->on_event) {
-                        callbacks->on_event(cfg->idx_offset + kscan_offset,
-                                            false);
-                    }
-                }
-                is_pressed[i] = false;
-                YKB_METRICS_KSCAN_TRANSITION(dev, chan_idx, false);
-            }
             err = mux_select_next(mux);
             if (err < 0) {
                 LOG_ERR("[%d] Unable to select next channel of the mux '%s'",
@@ -146,38 +119,6 @@ cleanup:
         LOG_WRN("Unable to disable mux '%s' (err %d)", mux->name, err);
     }
     return;
-}
-
-static int kscan_muxes_set_thresholds(const struct device *dev,
-                                      uint16_t *thresholds) {
-    if (!thresholds) {
-        return -EINVAL;
-    }
-    struct kscan_muxes_data *data = dev->data;
-    const struct kscan_muxes_config *cfg = dev->config;
-    for (size_t i = 0; i < cfg->channels_count; ++i) {
-        k_thread_suspend(&data->threads[i]);
-    }
-    k_mutex_lock(&kscan_mutex, K_FOREVER);
-    memcpy(data->thresholds, thresholds, cfg->key_amount * sizeof(uint16_t));
-    k_mutex_unlock(&kscan_mutex);
-    for (size_t i = 0; i < cfg->channels_count; ++i) {
-        k_thread_resume(&data->threads[i]);
-    }
-    return 0;
-}
-
-static int kscan_muxes_get_thresholds(const struct device *dev,
-                                      uint16_t *thresholds) {
-    if (!thresholds) {
-        return -EINVAL;
-    }
-    struct kscan_muxes_data *data = dev->data;
-    const struct kscan_muxes_config *cfg = dev->config;
-    k_mutex_lock(&kscan_mutex, K_FOREVER);
-    memcpy(thresholds, data->thresholds, cfg->key_amount * sizeof(uint16_t));
-    k_mutex_unlock(&kscan_mutex);
-    return 0;
 }
 
 static int kscan_muxes_get_key_amount(const struct device *dev) {
@@ -202,9 +143,6 @@ static int kscan_muxes_get_values(const struct device *dev, uint16_t *values) {
 }
 
 DEVICE_API(kscan, kscan_muxes_api) = {
-    .get_thresholds = kscan_muxes_get_thresholds,
-    .set_thresholds = kscan_muxes_set_thresholds,
-
     .get_key_amount = kscan_muxes_get_key_amount,
     .get_idx_offset = kscan_muxes_get_idx_offset,
     .get_values = kscan_muxes_get_values,
@@ -257,10 +195,6 @@ static int kscan_muxes_init(const struct device *dev) {
     }
 
     LOG_INF("KScan (MUXes) ready: %u MUXes", cfg->muxes_count);
-
-    for (uint16_t i = 0; i < cfg->key_amount; ++i) {
-        data->thresholds[i] = KSCAN_THRESHOLD_INACTIVE;
-    }
 
     for (uint16_t i = 0; i < cfg->muxes_count; ++i) {
         k_thread_create(&data->threads[i], data->stacks[i],
@@ -315,10 +249,6 @@ static int kscan_muxes_init(const struct device *dev) {
     static const struct device *__kscan_muxes_muxes__##inst[] = {              \
         DT_INST_FOREACH_PROP_ELEM(inst, muxes, MUX_DEV_AND_COMMA)};            \
                                                                                \
-    static uint16_t                                                            \
-        __kscan_muxes_data_thresholds__##inst[KSCAN_MUXES_CHANNELS_SUM(        \
-            inst)] = {0};                                                      \
-                                                                               \
     DT_INST_FOREACH_PROP_ELEM(inst, muxes, THREAD_STACK_DEFINE_IDX);           \
                                                                                \
     enum { __kscan_muxes_cnt__##inst = DT_INST_PROP_LEN(inst, muxes) };        \
@@ -347,7 +277,6 @@ static int kscan_muxes_init(const struct device *dev) {
         .settle_us = DT_INST_PROP(inst, settle_us),                            \
     };                                                                         \
     static struct kscan_muxes_data __kscan_muxes_data__##inst = {              \
-        .thresholds = __kscan_muxes_data_thresholds__##inst,                   \
         .values = __kscan_muxes_values__##inst,                                \
                                                                                \
         .threads = __kscan_muxes_threads__##inst,                              \

@@ -119,54 +119,40 @@ zephyr_udc0: &usbd {
 		zephyr,gain = "ADC_GAIN_1_6";
 		zephyr,reference = "ADC_REF_INTERNAL";
 		zephyr,acquisition-time =
-			<ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 20)>;
+			<ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 10)>;
 		zephyr,input-positive = <NRF_SAADC_AIN0>;
 		zephyr,resolution = <10>;
+		zephyr,oversampling = <3>;
 	};
 	channel@1 {
 		reg = <1>;
 		zephyr,gain = "ADC_GAIN_1_6";
 		zephyr,reference = "ADC_REF_INTERNAL";
 		zephyr,acquisition-time =
-			<ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 20)>;
+			<ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 10)>;
 		zephyr,input-positive = <NRF_SAADC_AIN1>;
 		zephyr,resolution = <10>;
+		zephyr,oversampling = <3>;
 	};
 	channel@2 {
 		reg = <2>;
 		zephyr,gain = "ADC_GAIN_1_6";
 		zephyr,reference = "ADC_REF_INTERNAL";
 		zephyr,acquisition-time =
-			<ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 20)>;
+			<ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 10)>;
 		zephyr,input-positive = <NRF_SAADC_AIN2>;
 		zephyr,resolution = <10>;
+		zephyr,oversampling = <3>;
 	};
 	channel@3 {
 		reg = <3>;
 		zephyr,gain = "ADC_GAIN_1_6";
 		zephyr,reference = "ADC_REF_INTERNAL";
 		zephyr,acquisition-time =
-			<ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 20)>;
+			<ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 10)>;
 		zephyr,input-positive = <NRF_SAADC_AIN3>;
 		zephyr,resolution = <10>;
-	};
-	channel@5 {
-		reg = <5>;
-		zephyr,gain = "ADC_GAIN_1_6";
-		zephyr,reference = "ADC_REF_INTERNAL";
-		zephyr,acquisition-time =
-			<ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 20)>;
-		zephyr,input-positive = <NRF_SAADC_AIN5>;
-		zephyr,resolution = <10>;
-	};
-	channel@7 {
-		reg = <7>;
-		zephyr,gain = "ADC_GAIN_1_6";
-		zephyr,reference = "ADC_REF_INTERNAL";
-		zephyr,acquisition-time =
-			<ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 20)>;
-		zephyr,input-positive = <NRF_SAADC_AIN7>;
-		zephyr,resolution = <10>;
+		zephyr,oversampling = <3>;
 	};
 
 };

@@ -138,8 +138,6 @@ struct bt_hids *bt_connect_hids_obj(void) { return &hids_obj; }
 
 #if CONFIG_BT_CONNECT_BAS
 static void publish_pending_battery_level(struct k_work *work) {
-    ARG_UNUSED(work);
-
     if (!battery_notifications_ready || !battery_level_pending_valid) {
         return;
     }
@@ -167,7 +165,6 @@ static ssize_t read_primary_battery_level(struct bt_conn *conn,
 
 static void primary_battery_ccc_cfg_changed(const struct bt_gatt_attr *attr,
                                             uint16_t value) {
-    ARG_UNUSED(attr);
     battery_notifications_ready = (value == BT_GATT_CCC_NOTIFY);
 }
 
@@ -183,7 +180,6 @@ static ssize_t read_secondary_battery_level(struct bt_conn *conn,
 
 static void secondary_battery_ccc_cfg_changed(const struct bt_gatt_attr *attr,
                                               uint16_t value) {
-    ARG_UNUSED(attr);
     secondary_battery_notifications_ready = (value == BT_GATT_CCC_NOTIFY);
 }
 
@@ -401,7 +397,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason) {
 
 #if CONFIG_BT_CONNECT_BAS
     battery_notifications_ready = false;
-    (void)k_work_cancel_delayable(&battery_level_publish_work);
+    k_work_cancel_delayable(&battery_level_publish_work);
 #endif // CONFIG_BT_CONNECT_BAS
 
     notify_disconnected(&addr);

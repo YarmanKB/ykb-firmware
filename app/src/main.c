@@ -4,7 +4,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
-#include <drivers/kscan.h>
+#include <subsys/kb_handler.h>
 
 #include <nrfx_clock.h>
 
@@ -16,7 +16,7 @@ static void on_event(uint16_t key_index, bool pressed) {
     LOG_INF("Key %d %s", key_index, pressed ? "pressed" : "released");
 }
 
-KSCAN_CB_DEFINE(main) = {
+KB_HANDLER_CB_DEFINE(main) = {
     .on_event = on_event,
 };
 

@@ -197,7 +197,7 @@ static bool tx_slot_begin_transfer(struct tx_slot *slot, const void *data,
     memcpy(slot->data, data, data_len);
     slot->pending_packet_ready = false;
     slot->state = TX_SLOT_TRANSCEIVING;
-    (void)k_work_reschedule(&slot->work, K_NO_WAIT);
+    k_work_reschedule(&slot->work, K_NO_WAIT);
     return true;
 }
 
@@ -223,7 +223,7 @@ static void benchmark_schedule_next(k_timeout_t delay) {
         return;
     }
 
-    (void)k_work_reschedule(&benchmark_work, delay);
+    k_work_reschedule(&benchmark_work, delay);
 }
 
 static void
@@ -249,8 +249,6 @@ benchmark_log_sample(const struct splitlink_benchmark_payload *sample) {
 }
 
 static void benchmark_work_handler(struct k_work *work) {
-    ARG_UNUSED(work);
-
     if (!ATOMIC_LOAD(&connected)) {
         return;
     }
@@ -384,7 +382,7 @@ void tx_slot_work_handler(struct k_work *work) {
     err = splitlink_send((uint8_t *)&slot->pending_packet, packet_len);
     if (err) {
         if (err == -ENOMEM || err == -EAGAIN) {
-            (void)k_work_reschedule(&slot->work, K_MSEC(5));
+            k_work_reschedule(&slot->work, K_MSEC(5));
             return;
         }
 
@@ -397,7 +395,7 @@ void tx_slot_work_handler(struct k_work *work) {
     slot->pending_packet_ready = false;
 
     if (ykb_protocol_tx_has_more(&slot->tx)) {
-        (void)k_work_reschedule(&slot->work, K_NO_WAIT);
+        k_work_reschedule(&slot->work, K_NO_WAIT);
         return;
     }
 
@@ -414,13 +412,13 @@ out:
         slot->pending_packet_ready = false;
         slot->state = TX_SLOT_TRANSCEIVING;
         pending_values_tx_ready = false;
-        (void)k_work_reschedule(&slot->work, K_NO_WAIT);
+        k_work_reschedule(&slot->work, K_NO_WAIT);
         return;
     }
     if (slot->id == BATTERY_SLOT_ID && pending_battery_tx_ready &&
         slot->state == TX_SLOT_EMPTY) {
-        (void)tx_slot_begin_transfer(slot, &pending_battery_tx_state,
-                                     sizeof(pending_battery_tx_state));
+        tx_slot_begin_transfer(slot, &pending_battery_tx_state,
+                               sizeof(pending_battery_tx_state));
         pending_battery_tx_ready = false;
         return;
     }
@@ -586,7 +584,7 @@ void splitlink_sync_send_values(uint16_t *values, uint16_t count) {
         return;
     }
 
-    (void)tx_slot_begin_transfer(slot, values, size_bytes);
+    tx_slot_begin_transfer(slot, values, size_bytes);
 }
 #endif // CONFIG_SPLITLINK_SYNC_SLAVE
 
@@ -604,7 +602,7 @@ void splitlink_sync_send_battery_state(const splitlink_battery_state_t *state) {
         return;
     }
 
-    (void)tx_slot_begin_transfer(slot, state, sizeof(*state));
+    tx_slot_begin_transfer(slot, state, sizeof(*state));
 }
 #endif // CONFIG_SPLITLINK_SYNC_SLAVE
 
@@ -632,7 +630,7 @@ static void script_slot_sync_kick_locked(void) {
     }
     memcpy(&slot_packet.payload, &script_payload, sizeof(script_payload));
 
-    (void)tx_slot_begin_transfer(slot, &slot_packet, sizeof(slot_packet));
+    tx_slot_begin_transfer(slot, &slot_packet, sizeof(slot_packet));
 }
 #endif // CONFIG_SPLITLINK_SYNC_MASTER
 
@@ -646,7 +644,7 @@ void splitlink_sync_send_settings(const kb_settings_t *settings) {
         return;
     }
     struct tx_slot *slot = &settings_tx_slot;
-    (void)tx_slot_begin_transfer_or_log_busy(slot, settings, sizeof(*settings));
+    tx_slot_begin_transfer_or_log_busy(slot, settings, sizeof(*settings));
 }
 #endif // CONFIG_SPLITLINK_SYNC_MASTER
 
@@ -664,7 +662,7 @@ void splitlink_sync_send_scripts_manifest(
         return;
     }
 
-    (void)tx_slot_begin_transfer_or_log_busy(slot, manifest, sizeof(*manifest));
+    tx_slot_begin_transfer_or_log_busy(slot, manifest, sizeof(*manifest));
 }
 
 void splitlink_sync_send_script_slot(
@@ -680,8 +678,7 @@ void splitlink_sync_send_script_slot(
         return;
     }
 
-    (void)tx_slot_begin_transfer_or_log_busy(slot, slot_packet,
-                                             sizeof(*slot_packet));
+    tx_slot_begin_transfer_or_log_busy(slot, slot_packet, sizeof(*slot_packet));
 }
 
 void splitlink_sync_queue_script_slot_sync(uint16_t slot) {
@@ -711,7 +708,7 @@ void splitlink_sync_request_scripts(const splitlink_script_request_t *request) {
         return;
     }
 
-    (void)tx_slot_begin_transfer_or_log_busy(slot, request, sizeof(*request));
+    tx_slot_begin_transfer_or_log_busy(slot, request, sizeof(*request));
 }
 #endif // CONFIG_SPLITLINK_SYNC_SLAVE
 
@@ -768,7 +765,7 @@ void splitlink_sync_protocol_on_connect(void) {
 void splitlink_sync_protocol_on_disconnect(void) {
     ATOMIC_STORE(&connected, false);
 #if CONFIG_SPLITLINK_BENCHMARK && CONFIG_SPLITLINK_SYNC_MASTER
-    (void)k_work_cancel_delayable(&benchmark_work);
+    k_work_cancel_delayable(&benchmark_work);
     ATOMIC_STORE(&benchmark_inflight, false);
 #endif // CONFIG_SPLITLINK_BENCHMARK && CONFIG_SPLITLINK_SYNC_MASTER
 #if CONFIG_SPLITLINK_SYNC_MASTER

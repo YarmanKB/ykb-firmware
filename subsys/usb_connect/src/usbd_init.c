@@ -135,8 +135,8 @@ struct usbd_context *usbd_setup_device(usbd_msg_cb_t msg_cb) {
 
 #if CONFIG_USB_CONNECT_20_EXTENSION_DESC
 
-    (void)usbd_device_set_bcd_usb(&usbd, USBD_SPEED_FS, 0x0201);
-    (void)usbd_device_set_bcd_usb(&usbd, USBD_SPEED_HS, 0x0201);
+    usbd_device_set_bcd_usb(&usbd, USBD_SPEED_FS, 0x0201);
+    usbd_device_set_bcd_usb(&usbd, USBD_SPEED_HS, 0x0201);
 
     err = usbd_add_descriptor(&usbd, &usbext);
     if (err) {

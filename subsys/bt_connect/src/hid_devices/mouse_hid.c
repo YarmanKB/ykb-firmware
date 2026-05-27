@@ -47,9 +47,6 @@ static const uint8_t hid_mouse_report_desc[] = {
 static int append_mouse_hids_init(struct bt_hids_init_param *init,
                                   uint8_t *input_count, uint8_t *output_count,
                                   uint8_t *feature_count) {
-    ARG_UNUSED(output_count);
-    ARG_UNUSED(feature_count);
-
     input_report_index = *input_count;
 
     struct bt_hids_inp_rep *mouse_inp =

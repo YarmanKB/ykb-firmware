@@ -8,8 +8,6 @@
 
 LOG_MODULE_REGISTER(kscan_enables, CONFIG_KSCAN_LOG_LEVEL);
 
-#define KSCAN_THRESHOLD_INACTIVE UINT16_MAX
-
 struct kscan_enables_config {
     const struct adc_dt_spec channel;
     const struct gpio_dt_spec *enables;
@@ -21,14 +19,11 @@ struct kscan_enables_config {
 };
 
 struct kscan_enables_data {
-    uint16_t *thresholds;
     uint16_t *values;
 
     struct k_thread thread;
     k_thread_stack_t *stack;
 };
-
-static K_MUTEX_DEFINE(kscan_mutex);
 
 static void kscan_enables_thread(void *kscan_dev, void *_, void *__) {
     const struct device *dev = kscan_dev;
@@ -49,9 +44,6 @@ static void kscan_enables_thread(void *kscan_dev, void *_, void *__) {
             return;
         }
     }
-
-    bool is_pressed[cfg->key_amount];
-    memset(is_pressed, 0, sizeof(is_pressed));
 
     while (true) {
         uint32_t scan_start = k_cycle_get_32();
@@ -87,23 +79,6 @@ static void kscan_enables_thread(void *kscan_dev, void *_, void *__) {
                 }
             }
             data->values[i] = val;
-            if (val >= data->thresholds[i] && !is_pressed[i]) {
-                STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
-                    if (callbacks->on_event) {
-                        callbacks->on_event(cfg->idx_offset + i, true);
-                    }
-                }
-                is_pressed[i] = true;
-                YKB_METRICS_KSCAN_TRANSITION(dev, 0U, true);
-            } else if (val < data->thresholds[i] && is_pressed[i]) {
-                STRUCT_SECTION_FOREACH(kscan_cb, callbacks) {
-                    if (callbacks->on_event) {
-                        callbacks->on_event(cfg->idx_offset + i, false);
-                    }
-                }
-                is_pressed[i] = false;
-                YKB_METRICS_KSCAN_TRANSITION(dev, 0U, false);
-            }
 
             err = gpio_pin_set_dt(en, 0);
             if (err) {
@@ -115,34 +90,6 @@ static void kscan_enables_thread(void *kscan_dev, void *_, void *__) {
         YKB_METRICS_KSCAN_SCAN_DONE(dev, 0U, cfg->key_amount,
                                     k_cycle_get_32() - scan_start);
     }
-}
-
-static int kscan_enables_set_thresholds(const struct device *dev,
-                                        uint16_t *thresholds) {
-    if (!thresholds) {
-        return -EINVAL;
-    }
-    struct kscan_enables_data *data = dev->data;
-    const struct kscan_enables_config *cfg = dev->config;
-    k_thread_suspend(&data->thread);
-    k_mutex_lock(&kscan_mutex, K_FOREVER);
-    memcpy(data->thresholds, thresholds, cfg->key_amount * sizeof(uint16_t));
-    k_mutex_unlock(&kscan_mutex);
-    k_thread_resume(&data->thread);
-    return 0;
-}
-
-static int kscan_enables_get_thresholds(const struct device *dev,
-                                        uint16_t *thresholds) {
-    if (!thresholds) {
-        return -EINVAL;
-    }
-    struct kscan_enables_data *data = dev->data;
-    const struct kscan_enables_config *cfg = dev->config;
-    k_mutex_lock(&kscan_mutex, K_FOREVER);
-    memcpy(thresholds, data->thresholds, cfg->key_amount * sizeof(uint16_t));
-    k_mutex_unlock(&kscan_mutex);
-    return 0;
 }
 
 static int kscan_enables_get_key_amount(const struct device *dev) {
@@ -168,9 +115,6 @@ static int kscan_enables_get_values(const struct device *dev,
 }
 
 DEVICE_API(kscan, kscan_enables_api) = {
-    .get_thresholds = kscan_enables_get_thresholds,
-    .set_thresholds = kscan_enables_set_thresholds,
-
     .get_key_amount = kscan_enables_get_key_amount,
     .get_idx_offset = kscan_enables_get_idx_offset,
     .get_values = kscan_enables_get_values,
@@ -204,10 +148,6 @@ static int kscan_enables_init(const struct device *dev) {
 
     LOG_INF("KScan (Enables) ready: %u enables", cfg->key_amount);
 
-    for (uint16_t i = 0; i < cfg->key_amount; ++i) {
-        data->thresholds[i] = KSCAN_THRESHOLD_INACTIVE;
-    }
-
     k_thread_create(&data->thread, data->stack,
                     CONFIG_KSCAN_ENABLES_THREAD_STACK_SIZE,
                     kscan_enables_thread, (void *)dev, NULL, NULL,
@@ -236,9 +176,6 @@ static int kscan_enables_init(const struct device *dev) {
     static const struct adc_dt_spec __kscan_enables_adc_channel__##inst[] = {  \
         DT_INST_FOREACH_PROP_ELEM(inst, io_channels, ADC_SPEC_AND_COMMA)};     \
                                                                                \
-    static uint16_t __kscan_enables_thresholds__##inst[DT_INST_PROP_LEN(       \
-        inst, enable_gpios)] = {0};                                            \
-                                                                               \
     static uint16_t __kscan_enables_values__##inst[DT_INST_PROP_LEN(           \
         inst, enable_gpios)] = {0};                                            \
                                                                                \
@@ -256,7 +193,6 @@ static int kscan_enables_init(const struct device *dev) {
     static struct kscan_enables_data __kscan_enables_data__##inst = {          \
         .stack = __kscan_enables_thread_stack__##inst,                         \
         .values = __kscan_enables_values__##inst,                              \
-        .thresholds = __kscan_enables_thresholds__##inst,                      \
     };                                                                         \
                                                                                \
     DEVICE_DT_INST_DEFINE(                                                     \

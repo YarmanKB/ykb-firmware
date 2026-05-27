@@ -122,9 +122,7 @@ void splitlink_sync_on_connect() {
 void splitlink_sync_on_disconnect() { LOG_INF("SplitLink disconnected"); }
 
 void splitlink_sync_battery_state_received(
-    const splitlink_battery_state_t *state) {
-    ARG_UNUSED(state);
-}
+    const splitlink_battery_state_t *state) {}
 
 int splitlink_sync_slave_attach_kb_handler(void) {
     int err;

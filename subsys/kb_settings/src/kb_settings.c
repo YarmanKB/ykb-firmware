@@ -1,13 +1,13 @@
 #include <subsys/kb_settings.h>
 
+#include "generated_default_settings.h"
+
 #ifdef CONFIG_YKB_BACKLIGHT
 #include <subsys/ykb_backlight.h>
 #endif // CONFIG_YKB_BACKLIGHT
 #ifdef CONFIG_YKB_BATTSENSE
 #include <subsys/ykb_battsense.h>
 #endif // CONFIG_YKB_BATTSENSE
-
-#include <subsys/kb_handler.h>
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -25,7 +25,10 @@
 LOG_MODULE_REGISTER(kb_settings, CONFIG_KB_SETTINGS_LOG_LEVEL);
 
 // Increment every time kb_settings_image_t or it's contents change
-#define KB_SETTINGS_IMAGE_VERSION 1
+#define KB_SETTINGS_IMAGE_VERSION 2
+
+BUILD_ASSERT(GENERATED_DEFAULT_SETTINGS_KEY_COUNT == TOTAL_KEY_COUNT,
+             "generated default settings should match TOTAL_KEY_COUNT");
 
 typedef struct {
     uint16_t version;
@@ -51,65 +54,48 @@ kb_settings_handle_on_update_snapshot(const kb_settings_t *settings) {
 }
 
 static int kb_settings_load_defaults(void) {
-    int err;
-    const kb_fn_shortcut_t *fn_shortcuts = NULL;
-    size_t fn_shortcuts_count;
+    int err = 0;
 
     k_mutex_lock(&kb_settings_mut, K_FOREVER);
 
     kb_settings.mode = KB_MODE_NORMAL;
 
-    err = kb_handler_get_default_keymap_layer1(kb_settings.mappings_layer1);
-    if (err) {
-        goto cleanup;
-    }
-    err = kb_handler_get_default_keymap_layer2(kb_settings.mappings_layer2);
-    if (err) {
-        goto cleanup;
-    }
-    err = kb_handler_get_default_keymap_layer3(kb_settings.mappings_layer3);
-    if (err) {
-        goto cleanup;
-    }
+    memcpy(kb_settings.mappings_layer1,
+           generated_default_settings_keymap_layer1,
+           sizeof(kb_settings.mappings_layer1));
+    memcpy(kb_settings.mappings_layer2,
+           generated_default_settings_keymap_layer2,
+           sizeof(kb_settings.mappings_layer2));
+    memcpy(kb_settings.mappings_layer3,
+           generated_default_settings_keymap_layer3,
+           sizeof(kb_settings.mappings_layer3));
+    memcpy(&kb_settings.mouseemu, &generated_default_settings_mouseemu,
+           sizeof(kb_settings.mouseemu));
 
-    err = kb_handler_get_default_mouseemu(&kb_settings.mouseemu);
-    if (err) {
-        goto cleanup;
-    }
-
-    fn_shortcuts_count = kb_handler_get_default_fn_shortcuts(&fn_shortcuts);
-    if (fn_shortcuts_count > CONFIG_KB_SETTINGS_FN_SHORTCUTS_MAX) {
+    if (generated_default_settings_fn_shortcuts_count >
+        CONFIG_KB_SETTINGS_FN_SHORTCUTS_MAX) {
         err = -E2BIG;
         goto cleanup;
     }
 
-    kb_settings.fn_shortcuts_count = (uint8_t)fn_shortcuts_count;
+    kb_settings.fn_shortcuts_count =
+        (uint8_t)generated_default_settings_fn_shortcuts_count;
     memset(kb_settings.fn_shortcuts, 0, sizeof(kb_settings.fn_shortcuts));
-    if (fn_shortcuts_count > 0U && fn_shortcuts) {
-        memcpy(kb_settings.fn_shortcuts, fn_shortcuts,
-               fn_shortcuts_count * sizeof(kb_fn_shortcut_t));
+    if (generated_default_settings_fn_shortcuts_count > 0U) {
+        memcpy(kb_settings.fn_shortcuts,
+               generated_default_settings_fn_shortcuts,
+               generated_default_settings_fn_shortcuts_count *
+                   sizeof(kb_fn_shortcut_t));
     }
 
-    uint16_t thresholds[TOTAL_KEY_COUNT];
-    uint16_t minimums[TOTAL_KEY_COUNT];
-    uint16_t maximums[TOTAL_KEY_COUNT];
-    err = kb_handler_get_default_thresholds(thresholds);
-    if (err) {
-        goto cleanup;
-    }
-    err = kb_handler_get_default_minimums(minimums);
-    if (err) {
-        goto cleanup;
-    }
-    err = kb_handler_get_default_maximums(maximums);
-    if (err) {
-        goto cleanup;
-    }
-    for (uint16_t i = 0; i < TOTAL_KEY_COUNT; ++i) {
-        kb_settings.thresholds[i] = thresholds[i];
-        kb_settings.minimums[i] = minimums[i];
-        kb_settings.maximums[i] = maximums[i];
-    }
+    memcpy(kb_settings.thresholds, generated_default_settings_thresholds,
+           sizeof(kb_settings.thresholds));
+    memcpy(kb_settings.minimums, generated_default_settings_minimums,
+           sizeof(kb_settings.minimums));
+    memcpy(kb_settings.maximums, generated_default_settings_maximums,
+           sizeof(kb_settings.maximums));
+    memcpy(kb_settings.deadzones, generated_default_settings_deadzones,
+           sizeof(kb_settings.deadzones));
 
 #if CONFIG_YKB_BACKLIGHT
     const ykb_backlight_settings_t *default_backlight_settings =

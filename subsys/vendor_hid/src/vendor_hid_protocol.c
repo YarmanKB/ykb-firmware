@@ -158,7 +158,7 @@ static void response_work_handler(struct k_work *work) {
         break;
     }
     case RESPONSE_GET_VALUES: {
-        kb_handler_get_values(values, TOTAL_KEY_COUNT);
+        kb_handler_get_raw_values(values, TOTAL_KEY_COUNT);
         data = (uint8_t *)values;
         len = sizeof(values);
         break;

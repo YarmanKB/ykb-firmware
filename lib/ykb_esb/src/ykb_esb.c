@@ -66,7 +66,7 @@ static void event_handler(struct esb_evt const *event) {
 
         /* PTX: consume the item we previously peeked */
         if (m_config.mode == YKB_ESB_MODE_PTX) {
-            (void)k_msgq_get(&m_msgq_tx_payloads, &tmp_payload, K_NO_WAIT);
+            k_msgq_get(&m_msgq_tx_payloads, &tmp_payload, K_NO_WAIT);
         }
 
         /* Many ESB implementations deliver ACK payload to RX FIFO after TX. */
@@ -83,7 +83,7 @@ static void event_handler(struct esb_evt const *event) {
 
         /* PTX: kick next queued payload now that ESB is idle */
         if (m_config.mode == YKB_ESB_MODE_PTX) {
-            (void)ptx_kick_next_from_msgq();
+            ptx_kick_next_from_msgq();
         }
         break;
 
@@ -93,15 +93,16 @@ static void event_handler(struct esb_evt const *event) {
         if (m_config.mode == YKB_ESB_MODE_PTX) {
             esb_flush_tx();
 #if CONFIG_LIB_YKB_ESB_MPSL
-            /* Within a timeslot: retry immediately — use all available airtime. */
-            (void)ptx_kick_next_from_msgq();
+            /* Within a timeslot: retry immediately — use all available airtime.
+             */
+            ptx_kick_next_from_msgq();
 #else
             /* Standalone: discard the failed packet so the queue drains.
              * The caller (e.g. alive_work) will re-enqueue after its delay.
              * Immediately retrying here without a PRX floods the IPC event
              * path back to cpuapp and triggers the nRF RPC error handler. */
-            (void)k_msgq_get(&m_msgq_tx_payloads, &tmp_payload, K_NO_WAIT);
-            (void)ptx_kick_next_from_msgq();
+            k_msgq_get(&m_msgq_tx_payloads, &tmp_payload, K_NO_WAIT);
+            ptx_kick_next_from_msgq();
 #endif
         }
 
@@ -314,7 +315,7 @@ int ykb_esb_init(ykb_esb_config_t *cfg, ykb_esb_callback_t callback) {
     }
     m_active = true;
     if (cfg->mode == YKB_ESB_MODE_PTX) {
-        (void)ptx_kick_next_from_msgq();
+        ptx_kick_next_from_msgq();
     }
 #endif
 
@@ -370,7 +371,7 @@ int ykb_esb_send(ykb_esb_data_t *tx_packet) {
      * prevent duplicate entries in the ESB TX FIFO.
      */
     if (m_active && esb_is_idle()) {
-        (void)ptx_kick_next_from_msgq();
+        ptx_kick_next_from_msgq();
     }
 
     return 0;
@@ -407,9 +408,10 @@ static int ykb_esb_resume(void) {
 
     /* PTX: kick TX if anything queued */
     if (m_config.mode == YKB_ESB_MODE_PTX) {
-        (void)ptx_kick_next_from_msgq();
+        ptx_kick_next_from_msgq();
     }
-    /* PRX: prx_preload_cached_ack() is already called inside esb_initialize() */
+    /* PRX: prx_preload_cached_ack() is already called inside esb_initialize()
+     */
 
     return 0;
 }
@@ -419,11 +421,11 @@ static int ykb_esb_resume(void) {
 static void on_timeslot_start_stop(timeslot_callback_type_t type) {
     switch (type) {
     case APP_TS_STARTED:
-        (void)ykb_esb_resume();
+        ykb_esb_resume();
         break;
 
     case APP_TS_STOPPED:
-        (void)ykb_esb_suspend();
+        ykb_esb_suspend();
         break;
 
     default:

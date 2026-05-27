@@ -73,8 +73,6 @@ static void splitlink_bt_adv_restart_work_handler(struct k_work *work) {
 
 static void splitlink_bt_ccc_cfg_changed(const struct bt_gatt_attr *attr,
                                          uint16_t value) {
-    ARG_UNUSED(attr);
-
     struct splitlink_bt_data *dev_data = &splitlink_bt_data;
 
     LOG_INF("Splitlink BT CCC changed: value=0x%04x", value);
@@ -90,10 +88,6 @@ static ssize_t splitlink_bt_rx_write(struct bt_conn *conn,
                                      const struct bt_gatt_attr *attr,
                                      const void *buf, uint16_t len,
                                      uint16_t offset, uint8_t flags) {
-    ARG_UNUSED(conn);
-    ARG_UNUSED(attr);
-    ARG_UNUSED(flags);
-
     if (offset != 0) {
         return BT_GATT_ERR(BT_ATT_ERR_INVALID_OFFSET);
     }
@@ -147,7 +141,7 @@ static void splitlink_bt_connected(struct bt_conn *conn, uint8_t err) {
     LOG_INF("Splitlink BT peripheral connected callback: err=%u", err);
     if (err) {
         LOG_WRN("Splitlink BT peripheral connect error (%u)", err);
-        (void)k_work_reschedule(&dev_data->adv_restart_work, K_MSEC(200));
+        k_work_reschedule(&dev_data->adv_restart_work, K_MSEC(200));
         return;
     }
 
@@ -174,7 +168,7 @@ static void splitlink_bt_disconnected(struct bt_conn *conn, uint8_t reason) {
     dev_data->notify_enabled = false;
     bt_conn_unref(dev_data->conn);
     dev_data->conn = NULL;
-    (void)k_work_reschedule(&dev_data->adv_restart_work, K_MSEC(200));
+    k_work_reschedule(&dev_data->adv_restart_work, K_MSEC(200));
 }
 
 static struct bt_conn_cb splitlink_bt_conn_cb = {
@@ -189,9 +183,7 @@ static void splitlink_bt_peripheral_start_advertising(void) {
     if (err && err != -EALREADY) {
         LOG_ERR("Splitlink BT advertising failed (%d)", err);
         if (err == -ENOMEM) {
-            (void)k_work_reschedule(
-                &splitlink_bt_data.adv_restart_work,
-                K_MSEC(200));
+            k_work_reschedule(&splitlink_bt_data.adv_restart_work, K_MSEC(200));
         }
     } else {
         LOG_INF("Splitlink BT advertising started");

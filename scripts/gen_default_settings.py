@@ -3,8 +3,8 @@
 import argparse
 from pathlib import Path
 
-
-ARRAY_SECTIONS = ("thresholds", "minimums", "maximums", "layer1", "layer2", "layer3")
+ARRAY_SECTIONS = ("thresholds", "minimums", "maximums", "deadzones", "layer1",
+                  "layer2", "layer3")
 FN_SHORTCUTS_SECTION = "fn_shortcuts"
 MOUSEEMU_KEYS = {
     "enabled",
@@ -17,8 +17,6 @@ MOUSEEMU_ARRAY_KEYS = {
     "move_keys",
     "scroll_keys",
     "button_keys",
-    "move_keys_deadzones",
-    "scroll_keys_deadzones",
 }
 
 FN_ACTIONS = {
@@ -61,12 +59,12 @@ def parse_layout(path: Path):
             if current not in data:
                 raise ValueError(
                     f"{path}:{lineno}: unknown section '{current}', "
-                    f"expected a known layout section"
-                )
+                    f"expected a known layout section")
             continue
 
         if current is None:
-            raise ValueError(f"{path}:{lineno}: content found before any section")
+            raise ValueError(
+                f"{path}:{lineno}: content found before any section")
 
         if current == "mouseemu":
             if "=" not in line:
@@ -76,8 +74,7 @@ def parse_layout(path: Path):
             key, value = [part.strip().lower() for part in line.split("=", 1)]
             if key not in MOUSEEMU_KEYS:
                 raise ValueError(
-                    f"{path}:{lineno}: unknown mouseemu key '{key}'"
-                )
+                    f"{path}:{lineno}: unknown mouseemu key '{key}'")
             data[current][key] = value
             continue
 
@@ -93,7 +90,8 @@ def parse_layout(path: Path):
                 )
 
             left_tokens = parts[0].split() if parts[0] else []
-            right_tokens = parts[1].split() if len(parts) == 2 and parts[1] else []
+            right_tokens = parts[1].split(
+            ) if len(parts) == 2 and parts[1] else []
 
             row_store = data[current]
             if not row_store or not isinstance(row_store[0], tuple):
@@ -129,6 +127,19 @@ def parse_u16_levels(tokens, path: Path, section_name: str):
     return values
 
 
+def parse_u16_value(token: str, path: Path, name: str):
+    try:
+        value = int(token, 10)
+    except ValueError as exc:
+        raise ValueError(
+            f"{path}: {name} value '{token}' is not an integer") from exc
+
+    if value < 0 or value > 1023:
+        raise ValueError(f"{path}: {name} value {value} is outside 0..1023")
+
+    return value
+
+
 def normalize_key_token(token: str):
     return token if token.startswith("KEY_") else f"KEY_{token}"
 
@@ -145,14 +156,12 @@ def parse_fn_shortcuts(entries, path: Path):
         lhs, rhs = [part.strip() for part in line.split("=", 1)]
         if "+" not in lhs:
             raise ValueError(
-                f"{path}:{lineno}: fn shortcut lhs should be in FN+KEY form"
-            )
+                f"{path}:{lineno}: fn shortcut lhs should be in FN+KEY form")
 
         prefix, key_token = [part.strip() for part in lhs.split("+", 1)]
         if prefix.upper() != "FN":
             raise ValueError(
-                f"{path}:{lineno}: fn shortcut lhs should start with FN+"
-            )
+                f"{path}:{lineno}: fn shortcut lhs should start with FN+")
 
         rhs = rhs.strip()
         if rhs.endswith(")") and "(" in rhs:
@@ -194,24 +203,23 @@ def parse_fn_shortcuts(entries, path: Path):
                     ) from exc
                 if speed < 0.1 or speed > 4.0:
                     raise ValueError(
-                        f"{path}:{lineno}: speed should be in 0.1..4.0"
-                    )
+                        f"{path}:{lineno}: speed should be in 0.1..4.0")
                 param = int(round(speed * 100.0))
             else:
                 raise ValueError(
-                    f"{path}:{lineno}: unsupported argument kind '{arg_kind}'"
-                )
+                    f"{path}:{lineno}: unsupported argument kind '{arg_kind}'")
 
-            shortcuts.append((normalize_key_token(key_token), action_symbol, param))
+            shortcuts.append(
+                (normalize_key_token(key_token), action_symbol, param))
             continue
 
         action_token = rhs.upper()
         if action_token not in FN_ACTIONS:
             raise ValueError(
-                f"{path}:{lineno}: unknown fn shortcut action '{rhs}'"
-            )
+                f"{path}:{lineno}: unknown fn shortcut action '{rhs}'")
 
-        shortcuts.append((normalize_key_token(key_token), FN_ACTIONS[action_token], 0))
+        shortcuts.append(
+            (normalize_key_token(key_token), FN_ACTIONS[action_token], 0))
 
     return shortcuts
 
@@ -233,9 +241,11 @@ def parse_ratio(value: str, path: Path, key: str):
         num = int(num_str, 10)
         den = int(den_str, 10)
     except ValueError as exc:
-        raise ValueError(f"{path}: mouseemu {key} ratio should be integers") from exc
+        raise ValueError(
+            f"{path}: mouseemu {key} ratio should be integers") from exc
     if den == 0:
-        raise ValueError(f"{path}: mouseemu {key} denominator should not be zero")
+        raise ValueError(
+            f"{path}: mouseemu {key} denominator should not be zero")
     return num, den
 
 
@@ -258,7 +268,7 @@ def parse_mouseemu_indices(tokens, path: Path, key: str, max_count: int):
 def format_c_array(values, wrap=8):
     lines = []
     for start in range(0, len(values), wrap):
-        chunk = values[start : start + wrap]
+        chunk = values[start:start + wrap]
         lines.append("    " + ", ".join(chunk) + ",")
     return "\n".join(lines) if lines else ""
 
@@ -292,21 +302,16 @@ def main():
         return left
 
     thresholds = parse_u16_levels(
-        flatten_half_rows(sections["thresholds"], "thresholds"), layout_path
-        , "thresholds"
-    )
+        flatten_half_rows(sections["thresholds"], "thresholds"), layout_path,
+        "thresholds")
     minimums_tokens = flatten_half_rows(sections["minimums"], "minimums")
-    minimums = (
-        parse_u16_levels(minimums_tokens, layout_path, "minimums")
-        if minimums_tokens
-        else list(thresholds)
-    )
+    minimums = (parse_u16_levels(minimums_tokens, layout_path, "minimums")
+                if minimums_tokens else list(thresholds))
     maximums_tokens = flatten_half_rows(sections["maximums"], "maximums")
-    maximums = (
-        parse_u16_levels(maximums_tokens, layout_path, "maximums")
-        if maximums_tokens
-        else [1023] * len(thresholds)
-    )
+    maximums = (parse_u16_levels(maximums_tokens, layout_path, "maximums")
+                if maximums_tokens else [1023] * len(thresholds))
+    deadzones_tokens = flatten_half_rows(sections["deadzones"], "deadzones")
+    deadzones = (parse_u16_levels(deadzones_tokens, layout_path, "deadzones"))
     layer1 = [
         normalize_key_token(token)
         for token in flatten_half_rows(sections["layer1"], "layer1")
@@ -319,7 +324,8 @@ def main():
         normalize_key_token(token)
         for token in flatten_half_rows(sections["layer3"], "layer3")
     ]
-    fn_shortcuts = parse_fn_shortcuts(sections[FN_SHORTCUTS_SECTION], layout_path)
+    fn_shortcuts = parse_fn_shortcuts(sections[FN_SHORTCUTS_SECTION],
+                                      layout_path)
 
     key_count = len(thresholds)
     if key_count == 0:
@@ -338,7 +344,8 @@ def main():
                 f"{layout_path}: minimums[{idx}]={minimum} is greater than maximums[{idx}]={maximum}"
             )
 
-    for name, layer in (("layer1", layer1), ("layer2", layer2), ("layer3", layer3)):
+    for name, layer in (("layer1", layer1), ("layer2", layer2), ("layer3",
+                                                                 layer3)):
         if len(layer) not in (0, key_count):
             raise ValueError(
                 f"{layout_path}: {name} has {len(layer)} entries, expected {key_count}"
@@ -352,113 +359,100 @@ def main():
         layer3 = ["KEY_NOKEY"] * key_count
 
     mouseemu_cfg = sections["mouseemu"]
-    mouseemu_enabled = parse_bool(mouseemu_cfg.get("enabled", "false"), layout_path,
-                                  "enabled")
+    mouseemu_enabled = parse_bool(mouseemu_cfg.get("enabled", "false"),
+                                  layout_path, "enabled")
     mouseemu_direction = mouseemu_cfg.get("direction", "4way")
     if mouseemu_direction == "4way":
         mouseemu_direction = "KB_MOUSEEMU_DIRECTION_4_WAY"
     elif mouseemu_direction == "8way":
         mouseemu_direction = "KB_MOUSEEMU_DIRECTION_8_WAY"
     else:
-        raise ValueError(f"{layout_path}: mouseemu direction should be 4way or 8way")
+        raise ValueError(
+            f"{layout_path}: mouseemu direction should be 4way or 8way")
 
-    move_x_num, move_x_den = parse_ratio(
-        mouseemu_cfg.get("move_x", "1/1"), layout_path, "move_x"
-    )
-    move_y_num, move_y_den = parse_ratio(
-        mouseemu_cfg.get("move_y", "1/1"), layout_path, "move_y"
-    )
-    scroll_num, scroll_den = parse_ratio(
-        mouseemu_cfg.get("scroll", "1/1"), layout_path, "scroll"
-    )
+    move_x_num, move_x_den = parse_ratio(mouseemu_cfg.get("move_x", "1/1"),
+                                         layout_path, "move_x")
+    move_y_num, move_y_den = parse_ratio(mouseemu_cfg.get("move_y", "1/1"),
+                                         layout_path, "move_y")
+    scroll_num, scroll_den = parse_ratio(mouseemu_cfg.get("scroll", "1/1"),
+                                         layout_path, "scroll")
 
-    move_keys = parse_mouseemu_indices(
-        sections["move_keys"], layout_path, "move_keys", 8
-    )
-    scroll_keys = parse_mouseemu_indices(
-        sections["scroll_keys"], layout_path, "scroll_keys", 2
-    )
-    button_keys = parse_mouseemu_indices(
-        sections["button_keys"], layout_path, "button_keys", 3
-    )
-    move_keys_deadzones = parse_mouseemu_indices(
-        sections["move_keys_deadzones"], layout_path, "move_keys_deadzones", 8
-    )
-    scroll_keys_deadzones = parse_mouseemu_indices(
-        sections["scroll_keys_deadzones"],
-        layout_path,
-        "scroll_keys_deadzones",
-        2,
-    )
-
+    move_keys = parse_mouseemu_indices(sections["move_keys"], layout_path,
+                                       "move_keys", 8)
+    scroll_keys = parse_mouseemu_indices(sections["scroll_keys"], layout_path,
+                                         "scroll_keys", 2)
+    button_keys = parse_mouseemu_indices(sections["button_keys"], layout_path,
+                                         "button_keys", 3)
     while len(move_keys) < 8:
         move_keys.append(0)
     while len(scroll_keys) < 2:
         scroll_keys.append(0)
     while len(button_keys) < 3:
         button_keys.append(0)
-    while len(move_keys_deadzones) < 8:
-        move_keys_deadzones.append(0)
-    while len(scroll_keys_deadzones) < 2:
-        scroll_keys_deadzones.append(0)
 
-    header = f"""#ifndef GENERATED_KB_HANDLER_LAYOUT_H
-#define GENERATED_KB_HANDLER_LAYOUT_H
+    header = f"""#ifndef GENERATED_DEFAULT_SETTINGS_H
+#define GENERATED_DEFAULT_SETTINGS_H
 
 #include <subsys/kb_settings.h>
 #include <zephyr/sys/util.h>
 #include <stdint.h>
 
-#define GENERATED_KB_HANDLER_KEY_COUNT {key_count}U
+#define GENERATED_DEFAULT_SETTINGS_KEY_COUNT {key_count}U
 
 extern const uint16_t
-    generated_kb_handler_default_thresholds[GENERATED_KB_HANDLER_KEY_COUNT];
+    generated_default_settings_thresholds[GENERATED_DEFAULT_SETTINGS_KEY_COUNT];
 extern const uint16_t
-    generated_kb_handler_default_minimums[GENERATED_KB_HANDLER_KEY_COUNT];
+    generated_default_settings_minimums[GENERATED_DEFAULT_SETTINGS_KEY_COUNT];
 extern const uint16_t
-    generated_kb_handler_default_maximums[GENERATED_KB_HANDLER_KEY_COUNT];
+    generated_default_settings_maximums[GENERATED_DEFAULT_SETTINGS_KEY_COUNT];
+extern const uint16_t
+    generated_default_settings_deadzones[GENERATED_DEFAULT_SETTINGS_KEY_COUNT];
 extern const uint8_t
-    generated_kb_handler_default_keymap_layer1[GENERATED_KB_HANDLER_KEY_COUNT];
+    generated_default_settings_keymap_layer1[GENERATED_DEFAULT_SETTINGS_KEY_COUNT];
 extern const uint8_t
-    generated_kb_handler_default_keymap_layer2[GENERATED_KB_HANDLER_KEY_COUNT];
+    generated_default_settings_keymap_layer2[GENERATED_DEFAULT_SETTINGS_KEY_COUNT];
 extern const uint8_t
-    generated_kb_handler_default_keymap_layer3[GENERATED_KB_HANDLER_KEY_COUNT];
-extern const kb_mouseemu_settings_t generated_kb_handler_default_mouseemu;
-extern const kb_fn_shortcut_t generated_kb_handler_default_fn_shortcuts[{max(1, len(fn_shortcuts))}U];
-extern const uint16_t generated_kb_handler_default_fn_shortcuts_count;
+    generated_default_settings_keymap_layer3[GENERATED_DEFAULT_SETTINGS_KEY_COUNT];
+extern const kb_mouseemu_settings_t generated_default_settings_mouseemu;
+extern const kb_fn_shortcut_t generated_default_settings_fn_shortcuts[{max(1, len(fn_shortcuts))}U];
+extern const uint16_t generated_default_settings_fn_shortcuts_count;
 
-#endif // GENERATED_KB_HANDLER_LAYOUT_H
+#endif // GENERATED_DEFAULT_SETTINGS_H
 """
 
-    source = f"""#include "generated_kb_handler_layout.h"
+    source = f"""#include "generated_default_settings.h"
 
 #include <dt-bindings/kb-handler/kb-key-codes.h>
 
-const uint16_t generated_kb_handler_default_thresholds[GENERATED_KB_HANDLER_KEY_COUNT] = {{
+const uint16_t generated_default_settings_thresholds[GENERATED_DEFAULT_SETTINGS_KEY_COUNT] = {{
 {format_c_array([str(value) for value in thresholds])}
 }};
 
-const uint16_t generated_kb_handler_default_minimums[GENERATED_KB_HANDLER_KEY_COUNT] = {{
+const uint16_t generated_default_settings_minimums[GENERATED_DEFAULT_SETTINGS_KEY_COUNT] = {{
 {format_c_array([str(value) for value in minimums])}
 }};
 
-const uint16_t generated_kb_handler_default_maximums[GENERATED_KB_HANDLER_KEY_COUNT] = {{
+const uint16_t generated_default_settings_maximums[GENERATED_DEFAULT_SETTINGS_KEY_COUNT] = {{
 {format_c_array([str(value) for value in maximums])}
 }};
 
-const uint8_t generated_kb_handler_default_keymap_layer1[GENERATED_KB_HANDLER_KEY_COUNT] = {{
+const uint16_t generated_default_settings_deadzones[GENERATED_DEFAULT_SETTINGS_KEY_COUNT] = {{
+{format_c_array([str(value) for value in deadzones])}
+}};
+
+const uint8_t generated_default_settings_keymap_layer1[GENERATED_DEFAULT_SETTINGS_KEY_COUNT] = {{
 {format_c_array(layer1)}
 }};
 
-const uint8_t generated_kb_handler_default_keymap_layer2[GENERATED_KB_HANDLER_KEY_COUNT] = {{
+const uint8_t generated_default_settings_keymap_layer2[GENERATED_DEFAULT_SETTINGS_KEY_COUNT] = {{
 {format_c_array(layer2)}
 }};
 
-const uint8_t generated_kb_handler_default_keymap_layer3[GENERATED_KB_HANDLER_KEY_COUNT] = {{
+const uint8_t generated_default_settings_keymap_layer3[GENERATED_DEFAULT_SETTINGS_KEY_COUNT] = {{
 {format_c_array(layer3)}
 }};
 
-const kb_mouseemu_settings_t generated_kb_handler_default_mouseemu = {{
+const kb_mouseemu_settings_t generated_default_settings_mouseemu = {{
     .enabled = {mouseemu_enabled},
     .direction_mode = {mouseemu_direction},
     .move_keys_count = {len(sections["move_keys"])}U,
@@ -470,18 +464,16 @@ const kb_mouseemu_settings_t generated_kb_handler_default_mouseemu = {{
     .move_x_k = (double){move_x_num} / (double){move_x_den},
     .move_y_k = (double){move_y_num} / (double){move_y_den},
     .scroll_k = (double){scroll_num} / (double){scroll_den},
-    .move_keys_deadzones = {{{", ".join(str(value) for value in move_keys_deadzones)}}},
-    .scroll_keys_deadzones = {{{", ".join(str(value) for value in scroll_keys_deadzones)}}},
 }};
 
 BUILD_ASSERT({len(fn_shortcuts)}U <= CONFIG_KB_SETTINGS_FN_SHORTCUTS_MAX,
              "fn shortcut default count exceeds CONFIG_KB_SETTINGS_FN_SHORTCUTS_MAX");
 
-const kb_fn_shortcut_t generated_kb_handler_default_fn_shortcuts[{max(1, len(fn_shortcuts))}U] = {{
+const kb_fn_shortcut_t generated_default_settings_fn_shortcuts[{max(1, len(fn_shortcuts))}U] = {{
 {format_c_array([f"{{.key = {key}, .action = {action}, .param = {param}}}" for key, action, param in fn_shortcuts], wrap=2)}
 }};
 
-const uint16_t generated_kb_handler_default_fn_shortcuts_count = {len(fn_shortcuts)}U;
+const uint16_t generated_default_settings_fn_shortcuts_count = {len(fn_shortcuts)}U;
 """
 
     out_h.write_text(header)

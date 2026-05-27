@@ -19,9 +19,6 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 // #define ESB_RPC_START_DELAY_MS 3000
 
 // static void esb_rpc_start_thread(void *p1, void *p2, void *p3) {
-//     ARG_UNUSED(p1);
-//     ARG_UNUSED(p2);
-//     ARG_UNUSED(p3);
 //
 //     k_sleep(K_MSEC(ESB_RPC_START_DELAY_MS));
 // }

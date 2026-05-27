@@ -72,8 +72,6 @@ static void caps_lock_handler(const struct bt_hids_rep *rep) {
 
 static void hids_outp_rep_handler(struct bt_hids_rep *rep, struct bt_conn *conn,
                                   bool write) {
-    ARG_UNUSED(conn);
-
     if (write) {
         caps_lock_handler(rep);
     }
@@ -81,8 +79,6 @@ static void hids_outp_rep_handler(struct bt_hids_rep *rep, struct bt_conn *conn,
 
 static void hids_boot_kb_outp_rep_handler(struct bt_hids_rep *rep,
                                           struct bt_conn *conn, bool write) {
-    ARG_UNUSED(conn);
-
     if (write) {
         caps_lock_handler(rep);
     }
@@ -91,8 +87,6 @@ static void hids_boot_kb_outp_rep_handler(struct bt_hids_rep *rep,
 static int append_kbd_hids_init(struct bt_hids_init_param *init,
                                 uint8_t *input_count, uint8_t *output_count,
                                 uint8_t *feature_count) {
-    ARG_UNUSED(feature_count);
-
     input_report_index = *input_count;
 
     struct bt_hids_inp_rep *kbd_inp =

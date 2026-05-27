@@ -29,12 +29,11 @@ static kb_handler_settings_update_cb_t settings_update_cb;
 static struct k_spinlock slave_values_lock;
 static uint16_t latest_slave_values[KBH_SLAVE_VALUES_CAPACITY];
 static atomic_bool slave_values_msg_pending;
+static atomic_bool slave_values_dirty;
 
-#if CONFIG_SPLITLINK_SYNC_SLAVE
-#define KBH_LOCAL_SETTINGS_OFFSET KEY_COUNT
-#else
-#define KBH_LOCAL_SETTINGS_OFFSET 0U
-#endif
+static void slave_values_retry_work_handler(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(slave_values_retry_work,
+                               slave_values_retry_work_handler);
 
 enum kbh_thread_msg_type {
     KBH_THREAD_MSG_KEY = 0U,
@@ -60,6 +59,7 @@ struct kbh_runtime_state {
 
     bool pressed_keys[TOTAL_KEY_COUNT];
     uint16_t current_values[TOTAL_KEY_COUNT];
+    uint16_t notified_press_percent[TOTAL_KEY_COUNT];
     bool race_pressed_keys[TOTAL_KEY_COUNT];
 
     uint16_t layer1_keys[TOTAL_KEY_COUNT];
@@ -80,6 +80,46 @@ struct kbh_runtime_state {
 
 K_MSGQ_DEFINE(kbh_core_msgq, sizeof(struct kbh_thread_msg),
               CONFIG_KB_HANDLER_MSGQ_SIZE, 4);
+
+static void notify_value(uint16_t key, uint16_t value) {
+    STRUCT_SECTION_FOREACH(kb_handler_cb, callbacks) {
+        if (callbacks->on_new_value) {
+            callbacks->on_new_value(key, value);
+        }
+    }
+}
+
+static void notify_transition(uint16_t key, bool pressed) {
+    STRUCT_SECTION_FOREACH(kb_handler_cb, callbacks) {
+        if (callbacks->on_event) {
+            callbacks->on_event(key, pressed);
+        }
+    }
+}
+
+static void enqueue_slave_values_msg(void) {
+    struct kbh_thread_msg data = {
+        .type = KBH_THREAD_MSG_SLAVE_VALUES,
+    };
+    int err = k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT);
+
+    YKB_METRICS_KB_MSGQ_PUT(YKB_METRICS_KB_MSG_SLAVE_VALUES, err,
+                            k_msgq_num_used_get(&kbh_core_msgq));
+    if (err) {
+        k_work_reschedule(&slave_values_retry_work, K_MSEC(1));
+    }
+}
+
+static void slave_values_retry_work_handler(struct k_work *work) {
+    (void)work;
+
+    if (!atomic_load_explicit(&slave_values_msg_pending,
+                              memory_order_relaxed)) {
+        return;
+    }
+
+    enqueue_slave_values_msg();
+}
 
 static inline bool is_modifier(uint8_t hid) {
     return (hid >= KEY_LEFTCONTROL && hid <= KEY_RIGHTGUI);
@@ -244,27 +284,22 @@ static bool key_in_list(uint16_t key, const uint16_t *keys, uint8_t key_count) {
 }
 
 static void mutate_mode_normal(kb_settings_t *settings, void *user_data) {
-    ARG_UNUSED(user_data);
     settings->mode = KB_MODE_NORMAL;
 }
 
 static void mutate_mode_race(kb_settings_t *settings, void *user_data) {
-    ARG_UNUSED(user_data);
     settings->mode = KB_MODE_RACE;
 }
 
 static void mutate_mode_mousesim(kb_settings_t *settings, void *user_data) {
-    ARG_UNUSED(user_data);
     settings->mode = KB_MODE_MOUSESIM;
 }
 
 static void mutate_transport_usb(kb_settings_t *settings, void *user_data) {
-    ARG_UNUSED(user_data);
     settings->kbh_prio = KBH_TRANSPORT_PRIO_USB;
 }
 
 static void mutate_transport_bt(kb_settings_t *settings, void *user_data) {
-    ARG_UNUSED(user_data);
     settings->kbh_prio = KBH_TRANSPORT_PRIO_BT;
 }
 
@@ -293,12 +328,10 @@ static bool find_next_occupied_script_slot(uint16_t current, int step,
 }
 
 static void mutate_bl_toggle(kb_settings_t *settings, void *user_data) {
-    ARG_UNUSED(user_data);
     settings->backlight.on = !settings->backlight.on;
 }
 
 static void mutate_bl_next_script(kb_settings_t *settings, void *user_data) {
-    ARG_UNUSED(user_data);
     uint16_t next_slot;
 
     if (find_next_occupied_script_slot(settings->backlight.active_script_index,
@@ -308,7 +341,6 @@ static void mutate_bl_next_script(kb_settings_t *settings, void *user_data) {
 }
 
 static void mutate_bl_prev_script(kb_settings_t *settings, void *user_data) {
-    ARG_UNUSED(user_data);
     uint16_t prev_slot;
 
     if (find_next_occupied_script_slot(settings->backlight.active_script_index,
@@ -318,25 +350,21 @@ static void mutate_bl_prev_script(kb_settings_t *settings, void *user_data) {
 }
 
 static void mutate_bl_brightness_up(kb_settings_t *settings, void *user_data) {
-    ARG_UNUSED(user_data);
     settings->backlight.brightness =
         MIN(settings->backlight.brightness + 0.1f, 1.0f);
 }
 
 static void mutate_bl_brightness_down(kb_settings_t *settings,
                                       void *user_data) {
-    ARG_UNUSED(user_data);
     settings->backlight.brightness =
         MAX(settings->backlight.brightness - 0.1f, 0.0f);
 }
 
 static void mutate_bl_speed_up(kb_settings_t *settings, void *user_data) {
-    ARG_UNUSED(user_data);
     settings->backlight.speed = MIN(settings->backlight.speed + 0.1f, 4.0f);
 }
 
 static void mutate_bl_speed_down(kb_settings_t *settings, void *user_data) {
-    ARG_UNUSED(user_data);
     settings->backlight.speed = MAX(settings->backlight.speed - 0.1f, 0.1f);
 }
 
@@ -460,6 +488,7 @@ static bool maybe_handle_fn_shortcut(struct kbh_runtime_state *st, uint16_t key,
 
         if (execute_fn_action(shortcut, st->settings) &&
             kb_settings_apply(st->settings) == 0) {
+            st->active_mode = st->settings->mode;
             st->shortcut_consumed_keys[key] = true;
             return true;
         }
@@ -567,6 +596,29 @@ static inline uint16_t key_value_from_minimum_range(uint16_t current_value,
         current_value, minimum, maximum, deadzone, KB_MOUSEEMU_MOVE_SCALE_MAX);
 }
 
+static inline uint16_t key_press_percent(const kb_settings_t *settings,
+                                         uint16_t key, uint16_t current_value) {
+    if (key >= TOTAL_KEY_COUNT) {
+        return 0;
+    }
+
+    return key_value_from_minimum_range_scaled(
+        current_value, settings->minimums[key], settings->maximums[key],
+        settings->deadzones[key], KB_HANDLER_PRESS_PERCENT_MAX);
+}
+
+static inline void notify_value_if_changed(struct kbh_runtime_state *st,
+                                           uint16_t key,
+                                           uint16_t press_percent) {
+    if (key >= TOTAL_KEY_COUNT ||
+        st->notified_press_percent[key] == press_percent) {
+        return;
+    }
+
+    st->notified_press_percent[key] = press_percent;
+    notify_value(key, press_percent);
+}
+
 static inline uint16_t
 key_scroll_value_from_minimum_range(uint16_t current_value, uint16_t minimum,
                                     uint16_t maximum, uint16_t deadzone) {
@@ -582,10 +634,10 @@ static inline double mouseemu_scroll_delta(kb_settings_t *settings,
     uint16_t down_idx = emu->scroll_keys[1];
     int32_t up = (int32_t)key_scroll_value_from_minimum_range(
         current_values[up_idx], settings->minimums[up_idx],
-        settings->maximums[up_idx], emu->scroll_keys_deadzones[0]);
+        settings->maximums[up_idx], settings->deadzones[up_idx]);
     int32_t down = (int32_t)key_scroll_value_from_minimum_range(
         current_values[down_idx], settings->minimums[down_idx],
-        settings->maximums[down_idx], emu->scroll_keys_deadzones[1]);
+        settings->maximums[down_idx], settings->deadzones[down_idx]);
 
     return (double)(up - down) * emu->scroll_k;
 }
@@ -598,19 +650,19 @@ mouseemu_vector_value(kb_settings_t *settings, uint16_t *current_values,
     uint16_t straight_vec = key_value_from_minimum_range(
         current_values[straight_key_idx], settings->minimums[straight_key_idx],
         settings->maximums[straight_key_idx],
-        emu->move_keys_deadzones[straight_vec_idx]);
+        settings->deadzones[straight_key_idx]);
 
     if (emu->direction_mode == KB_MOUSEEMU_DIRECTION_8_WAY) {
         uint16_t left_key_idx = emu->move_keys[left_vec_idx];
         uint16_t left_vec = key_value_from_minimum_range(
             current_values[left_key_idx], settings->minimums[left_key_idx],
             settings->maximums[left_key_idx],
-            emu->move_keys_deadzones[left_vec_idx]);
+            settings->deadzones[left_key_idx]);
         uint16_t right_key_idx = emu->move_keys[right_vec_idx];
         uint16_t right_vec = key_value_from_minimum_range(
             current_values[right_key_idx], settings->minimums[right_key_idx],
             settings->maximums[right_key_idx],
-            emu->move_keys_deadzones[right_vec_idx]);
+            settings->deadzones[right_key_idx]);
 
         return straight_vec + (left_vec / 2U) + (right_vec / 2U);
     }
@@ -681,6 +733,9 @@ static inline void send_mouse_report_if_changed(struct kbh_runtime_state *st) {
     double wheel_delta;
     double wheel_total;
     int32_t wheel_steps;
+    bool report_changed;
+    bool repeat_due;
+    bool should_send;
 
     mouseemu_value_handler(st->settings, st->current_values, st->pressed_keys,
                            &st->mouse_report, &wheel_delta);
@@ -696,10 +751,14 @@ static inline void send_mouse_report_if_changed(struct kbh_runtime_state *st) {
     st->mouse_report.wheel = (int8_t)wheel_steps;
     st->mouse_wheel_remainder = wheel_total - (double)wheel_steps;
 
-    if (!mouse_reports_equal(&st->mouse_report, &st->prev_mouse_report) ||
-        (mouse_report_has_motion(&st->mouse_report) &&
-         (now_ms - st->last_mouse_report_ms) >=
-             KBH_MOUSEEMU_REPEAT_INTERVAL_MS)) {
+    report_changed =
+        !mouse_reports_equal(&st->mouse_report, &st->prev_mouse_report);
+    repeat_due = mouse_report_has_motion(&st->mouse_report) &&
+                 (now_ms - st->last_mouse_report_ms) >=
+                     KBH_MOUSEEMU_REPEAT_INTERVAL_MS;
+    should_send = report_changed || repeat_due;
+
+    if (should_send) {
         kb_handler_transport_send_mouse_report(&st->mouse_report,
                                                st->settings->kbh_prio);
         YKB_METRICS_REPORT_SENT(YKB_METRICS_REPORT_MOUSE);
@@ -756,6 +815,7 @@ static void send_race_report_if_changed(struct kbh_runtime_state *st) {
 static inline void reset_handler_state(struct kbh_runtime_state *st) {
     memset(st->pressed_keys, 0, sizeof(st->pressed_keys));
     memset(st->current_values, 0, sizeof(st->current_values));
+    memset(st->notified_press_percent, 0, sizeof(st->notified_press_percent));
     memset(st->race_pressed_keys, 0, sizeof(st->race_pressed_keys));
 
     st->second_layer_active = false;
@@ -795,6 +855,8 @@ static void process_key_transition(struct kbh_runtime_state *st, uint16_t key,
     }
 
     st->pressed_keys[key] = status;
+    YKB_METRICS_KB_TRANSITION(status);
+    notify_transition(key, status);
 
     is_layer1_key = key_in_list(key, st->layer1_keys, st->layer1_keys_count);
     is_layer2_key = key_in_list(key, st->layer2_keys, st->layer2_keys_count);
@@ -848,11 +910,12 @@ static void handle_slave_values(struct kbh_runtime_state *st,
 
     for (uint16_t i = KEY_COUNT; i < TOTAL_KEY_COUNT; ++i) {
         bool was_pressed = st->pressed_keys[i];
-        st->pressed_keys[i] =
-            st->current_values[i] >= st->settings->thresholds[i];
+        bool pressed = st->current_values[i] >= st->settings->thresholds[i];
 
-        if (was_pressed != st->pressed_keys[i]) {
-            process_key_transition(st, i, st->pressed_keys[i]);
+        notify_value_if_changed(
+            st, i, key_press_percent(st->settings, i, st->current_values[i]));
+        if (was_pressed != pressed) {
+            process_key_transition(st, i, pressed);
         }
     }
 
@@ -878,10 +941,6 @@ static void kb_handler_thread(void *a, void *b, void *c) {
         .settings = &settings_snapshot,
         .active_mode = settings_snapshot.mode,
     };
-
-    ARG_UNUSED(a);
-    ARG_UNUSED(b);
-    ARG_UNUSED(c);
 
     rebuild_layer_cache(&st);
     reset_handler_state(&st);
@@ -926,19 +985,41 @@ static void kb_handler_thread(void *a, void *b, void *c) {
         case KBH_THREAD_MSG_SLAVE_VALUES:
             if (KEY_COUNT_SLAVE > 0U) {
                 uint16_t slave_values[KBH_SLAVE_VALUES_CAPACITY];
+                bool expected = false;
+
+                atomic_store_explicit(&slave_values_dirty, false,
+                                      memory_order_relaxed);
                 copy_latest_slave_values(slave_values);
+                handle_slave_values(&st, slave_values);
+
                 atomic_store_explicit(&slave_values_msg_pending, false,
                                       memory_order_relaxed);
-                handle_slave_values(&st, slave_values);
+                if (atomic_load_explicit(&slave_values_dirty,
+                                         memory_order_relaxed) &&
+                    atomic_compare_exchange_strong_explicit(
+                        &slave_values_msg_pending, &expected, true,
+                        memory_order_relaxed, memory_order_relaxed)) {
+                    enqueue_slave_values_msg();
+                }
             }
             break;
-        case KBH_THREAD_MSG_VALUE:
+        case KBH_THREAD_MSG_VALUE: {
             if (msg.key >= TOTAL_KEY_COUNT) {
                 LOG_WRN("Ignoring out-of-range value key %u", msg.key);
                 break;
             }
 
+            bool was_pressed = st.pressed_keys[msg.key];
+            bool pressed = msg.value >= st.settings->thresholds[msg.key];
+
             st.current_values[msg.key] = msg.value;
+            notify_value_if_changed(
+                &st, msg.key,
+                key_press_percent(st.settings, msg.key, msg.value));
+
+            if (was_pressed != pressed) {
+                process_key_transition(&st, msg.key, pressed);
+            }
 
             if (st.active_mode == KB_MODE_MOUSESIM) {
                 send_mouse_report_if_changed(&st);
@@ -947,6 +1028,7 @@ static void kb_handler_thread(void *a, void *b, void *c) {
                 send_race_report_if_changed(&st);
             }
             break;
+        }
         default:
             LOG_WRN("Unknown kb handler thread msg type %u", msg.type);
             break;
@@ -1032,31 +1114,14 @@ static void kb_handler_on_settings_update(const kb_settings_t *settings) {
     if (thread_started && !from_core_thread) {
         k_thread_suspend(&kbh_core_thread);
         k_msgq_purge(&kbh_core_msgq);
+        k_work_cancel_delayable(&slave_values_retry_work);
+        atomic_store_explicit(&slave_values_msg_pending, false,
+                              memory_order_relaxed);
+        atomic_store_explicit(&slave_values_dirty, false, memory_order_relaxed);
     }
 
     memcpy(&settings_snapshot, settings, sizeof(settings_snapshot));
     mouseemu_check(TOTAL_KEY_COUNT, &settings_snapshot.mouseemu);
-
-    for (size_t i = 0; i < kb_handler_kscan_count(); ++i) {
-        const struct device *kscan = kb_handler_get_kscan(i);
-        int idx_offset = kscan_get_idx_offset(kscan);
-        int err;
-
-        if (idx_offset < 0) {
-            LOG_ERR("Unable to get idx offset for KScan instance %s (err %d)",
-                    kscan->name, idx_offset);
-            continue;
-        }
-
-        err = kscan_set_thresholds(
-            kscan, (uint16_t *)&settings
-                       ->thresholds[KBH_LOCAL_SETTINGS_OFFSET + idx_offset]);
-        if (err) {
-            LOG_ERR("Unable to set thresholds for KScan instance %s (err %d)",
-                    kscan->name, err);
-            continue;
-        }
-    }
 
     if (settings_update_cb) {
         settings_update_cb(&settings_snapshot);
@@ -1071,6 +1136,10 @@ static void kb_handler_on_settings_update(const kb_settings_t *settings) {
                         K_NO_WAIT);
         k_thread_name_set(&kbh_core_thread, "kb_handler_core");
         thread_started = true;
+    }
+
+    if (from_core_thread) {
+        return;
     }
 
     int err = k_msgq_put(&kbh_core_msgq, &msg, K_NO_WAIT);
@@ -1100,6 +1169,7 @@ int kb_handler_core_init(void) {
     memset(latest_slave_values, 0, sizeof(latest_slave_values));
     atomic_store_explicit(&slave_values_msg_pending, false,
                           memory_order_relaxed);
+    atomic_store_explicit(&slave_values_dirty, false, memory_order_relaxed);
 
     err = kb_handler_check_kscans_ready();
     if (err) {
@@ -1148,9 +1218,6 @@ void kb_handler_core_handle_value(uint16_t key_index, uint16_t value) {
 
 void kb_handler_core_handle_slave_values(const uint16_t *slave_values,
                                          uint16_t count) {
-    struct kbh_thread_msg data = {
-        .type = KBH_THREAD_MSG_SLAVE_VALUES,
-    };
     bool expected = false;
     k_spinlock_key_t key;
 
@@ -1166,6 +1233,7 @@ void kb_handler_core_handle_slave_values(const uint16_t *slave_values,
     memcpy(latest_slave_values, slave_values, count * sizeof(uint16_t));
     k_spin_unlock(&slave_values_lock, key);
     memcpy(&values[KEY_COUNT], slave_values, count * sizeof(uint16_t));
+    atomic_store_explicit(&slave_values_dirty, true, memory_order_relaxed);
 
     if (!atomic_compare_exchange_strong_explicit(
             &slave_values_msg_pending, &expected, true, memory_order_relaxed,
@@ -1173,14 +1241,7 @@ void kb_handler_core_handle_slave_values(const uint16_t *slave_values,
         return;
     }
 
-    int err = k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT);
-    YKB_METRICS_KB_MSGQ_PUT(YKB_METRICS_KB_MSG_SLAVE_VALUES, err,
-                            k_msgq_num_used_get(&kbh_core_msgq));
-    if (err) {
-        atomic_store_explicit(&slave_values_msg_pending, false,
-                              memory_order_relaxed);
-        LOG_WRN("Slave values event dropped");
-    }
+    enqueue_slave_values_msg();
 }
 
 void kb_handler_core_handle_slave_reset(void) {
@@ -1217,6 +1278,6 @@ int kb_handler_core_get_settings_snapshot(kb_settings_t *settings) {
     return 0;
 }
 
-void kb_handler_get_values(uint16_t *values_out, uint16_t count) {
+void kb_handler_get_raw_values(uint16_t *values_out, uint16_t count) {
     kb_handler_core_get_values(values_out, count);
 }

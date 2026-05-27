@@ -1,8 +1,8 @@
 #ifndef KB_HANDLER_PRIVATE_H
 #define KB_HANDLER_PRIVATE_H
 
-#include <subsys/kb_handler_internal_api.h>
 #include <subsys/kb_handler.h>
+#include <subsys/kb_handler_internal_api.h>
 #include <subsys/usb_connect.h>
 #include <subsys/zephyr_user_helpers.h>
 

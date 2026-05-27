@@ -15,8 +15,6 @@ struct kscan_unit_metrics {
     atomic_t samples;
     atomic_t scans;
     atomic_t read_errors;
-    atomic_t press_events;
-    atomic_t release_events;
     atomic_t samples_per_scan_max;
     atomic_t scan_us_total;
     atomic_t scan_us_max;
@@ -34,6 +32,8 @@ struct kb_msgq_metrics {
     atomic_t puts[YKB_METRICS_KB_MSG_COUNT];
     atomic_t drops[YKB_METRICS_KB_MSG_COUNT];
     atomic_t max_depth;
+    atomic_t press_events;
+    atomic_t release_events;
 };
 
 struct report_metrics {
@@ -147,18 +147,11 @@ void ykb_metrics_kscan_read_error(const struct device *dev, uint16_t unit_idx) {
     }
 }
 
-void ykb_metrics_kscan_transition(const struct device *dev, uint16_t unit_idx,
-                                  bool pressed) {
-    struct kscan_unit_metrics *unit = kscan_unit_get(dev, unit_idx);
-
-    if (!unit) {
-        return;
-    }
-
+void ykb_metrics_kb_transition(bool pressed) {
     if (pressed) {
-        atomic_inc(&unit->press_events);
+        atomic_inc(&kb_msgq.press_events);
     } else {
-        atomic_inc(&unit->release_events);
+        atomic_inc(&kb_msgq.release_events);
     }
 }
 
@@ -233,14 +226,12 @@ static void metrics_log_kscan(void) {
         atomic_val_t max_scan_us = atomic_get(&unit->scan_us_max);
 
         LOG_INF("kscan[%s:%u] samples=%ld/s scans=%ld/s avg=%ldus max=%ldus "
-                "errors=%ld/s transitions=%ld/%ld",
+                "errors=%ld/s",
                 unit->dev ? unit->dev->name : "?", unit->unit_idx,
                 (long)((samples * MSEC_PER_SEC) / interval_ms),
                 (long)((scans * MSEC_PER_SEC) / interval_ms), (long)avg_scan_us,
                 (long)max_scan_us,
-                (long)((errors * MSEC_PER_SEC) / interval_ms),
-                (long)atomic_get(&unit->press_events),
-                (long)atomic_get(&unit->release_events));
+                (long)((errors * MSEC_PER_SEC) / interval_ms));
     }
 }
 
@@ -276,8 +267,9 @@ static void metrics_log_kb_handler(void) {
     static atomic_val_t prev_drops[YKB_METRICS_KB_MSG_COUNT];
     uint32_t interval_ms = CONFIG_YKB_METRICS_LOG_INTERVAL_MS;
 
-    LOG_INF("kb msgq: key=%ld/s value=%ld/s slave=%ld/s drops=%ld/%ld/%ld "
-            "max_depth=%ld reports=%ld/%ld",
+    LOG_INF("kb handler: key_msg=%ld/s value_msg=%ld/s slave_msg=%ld/s "
+            "drops=%ld/%ld/%ld max_depth=%ld transitions=%ld/%ld "
+            "reports=%ld/%ld",
             (long)((diff_counter(&kb_msgq.puts[YKB_METRICS_KB_MSG_KEY],
                                  &prev_puts[YKB_METRICS_KB_MSG_KEY]) *
                     MSEC_PER_SEC) /
@@ -297,24 +289,24 @@ static void metrics_log_kb_handler(void) {
             (long)diff_counter(&kb_msgq.drops[YKB_METRICS_KB_MSG_SLAVE_VALUES],
                                &prev_drops[YKB_METRICS_KB_MSG_SLAVE_VALUES]),
             (long)atomic_get(&kb_msgq.max_depth),
+            (long)atomic_get(&kb_msgq.press_events),
+            (long)atomic_get(&kb_msgq.release_events),
             (long)atomic_get(&reports.sent[YKB_METRICS_REPORT_KBD]),
             (long)atomic_get(&reports.sent[YKB_METRICS_REPORT_MOUSE]));
 }
 
 static void metrics_log_work_handler(struct k_work *work) {
-    ARG_UNUSED(work);
-
     metrics_log_kscan();
     metrics_log_keys();
     metrics_log_kb_handler();
 
-    (void)k_work_reschedule(&metrics_log_work,
-                            K_MSEC(CONFIG_YKB_METRICS_LOG_INTERVAL_MS));
+    k_work_reschedule(&metrics_log_work,
+                      K_MSEC(CONFIG_YKB_METRICS_LOG_INTERVAL_MS));
 }
 
 static int ykb_metrics_init(void) {
-    (void)k_work_schedule(&metrics_log_work,
-                          K_MSEC(CONFIG_YKB_METRICS_LOG_INTERVAL_MS));
+    k_work_schedule(&metrics_log_work,
+                    K_MSEC(CONFIG_YKB_METRICS_LOG_INTERVAL_MS));
     return 0;
 }
 

@@ -7,17 +7,16 @@
 #include <zephyr/sys/iterable_sections.h>
 #include <zephyr/toolchain.h>
 
-void kb_handler_get_values(uint16_t *values, uint16_t count);
+void kb_handler_get_raw_values(uint16_t *values, uint16_t count);
 
-int kb_handler_get_default_thresholds(uint16_t *buffer);
-int kb_handler_get_default_minimums(uint16_t *buffer);
-int kb_handler_get_default_maximums(uint16_t *buffer);
+#define KB_HANDLER_PRESS_PERCENT_MAX 100U
 
-int kb_handler_get_default_keymap_layer1(uint8_t *buffer);
-int kb_handler_get_default_keymap_layer2(uint8_t *buffer);
-int kb_handler_get_default_keymap_layer3(uint8_t *buffer);
+struct kb_handler_cb {
+    void (*on_event)(uint16_t index, bool pressed);
+    void (*on_new_value)(uint16_t index, uint16_t press_percent);
+};
 
-int kb_handler_get_default_mouseemu(kb_mouseemu_settings_t *buffer);
-size_t kb_handler_get_default_fn_shortcuts(const kb_fn_shortcut_t **shortcuts);
+#define KB_HANDLER_CB_DEFINE(name)                                             \
+    static STRUCT_SECTION_ITERABLE(kb_handler_cb, __kb_handler_cb__##name)
 
 #endif // __SUBSYS_KB_HANDLER_H_

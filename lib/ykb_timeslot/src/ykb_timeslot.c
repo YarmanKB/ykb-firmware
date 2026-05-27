@@ -21,28 +21,31 @@ LOG_MODULE_REGISTER(ykb_timeslot, CONFIG_YKB_TIMESLOT_LOG_LEVEL);
  *
  *   LENGTH_US            : initial (and extension) slot duration
  *   TIMER_EXPIRY_US_EARLY: fire CC0 this many µs before slot end to attempt
- *                          an extension; must satisfy the MPSL extension margin.
- *   TIMER_EXPIRY_REQ     : fire CC1 this many µs before slot end to request
- *                          a fresh timeslot if extension failed.
+ *                          an extension; must satisfy the MPSL extension
+ * margin. TIMER_EXPIRY_REQ     : fire CC1 this many µs before slot end to
+ * request a fresh timeslot if extension failed.
  */
 #define TIMESLOT_REQUEST_TIMEOUT_US 1000000
-#define TIMESLOT_LENGTH_US          10000
-#define TIMESLOT_EXT_MARGIN_US      1000
+#define TIMESLOT_LENGTH_US 10000
+#define TIMESLOT_EXT_MARGIN_US 1000
 #define TIMESLOT_REQ_EARLIEST_MARGIN_US 200
 
-#define TIMER_EXPIRY_US_EARLY \
-    (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US - TIMESLOT_EXT_MARGIN_US)
-#define TIMER_EXPIRY_REQ \
-    (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US - TIMESLOT_REQ_EARLIEST_MARGIN_US)
+#define TIMER_EXPIRY_US_EARLY                                                  \
+    (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US -              \
+     TIMESLOT_EXT_MARGIN_US)
+#define TIMER_EXPIRY_REQ                                                       \
+    (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US -              \
+     TIMESLOT_REQ_EARLIEST_MARGIN_US)
 
 /* The MPSL non-preemptible thread must run at this cooperative priority. */
 #define MPSL_THREAD_PRIO CONFIG_MPSL_THREAD_COOP_PRIO
-#define STACKSIZE        CONFIG_LIB_YKB_TIMESLOT_STACK_SIZE
+#define STACKSIZE CONFIG_LIB_YKB_TIMESLOT_STACK_SIZE
 
 static timeslot_callback_t m_callback;
 static volatile bool m_in_timeslot;
 
-/* Declare the ESB RADIO IRQ handler – prevents implicit-function-declaration warning */
+/* Declare the ESB RADIO IRQ handler – prevents implicit-function-declaration
+ * warning */
 void radio_irq_handler(void);
 
 /* Messages to serialise MPSL API calls onto the non-preemptible thread */
@@ -62,7 +65,8 @@ static mpsl_timeslot_request_t timeslot_request_earliest = {
 
 static mpsl_timeslot_signal_return_param_t signal_callback_return_param;
 
-/* Message queue for requesting MPSL API calls from the non-preemptible thread */
+/* Message queue for requesting MPSL API calls from the non-preemptible thread
+ */
 K_MSGQ_DEFINE(mpsl_api_msgq, sizeof(enum mpsl_timeslot_call), 10, 4);
 
 static void schedule_request(enum mpsl_timeslot_call call) {
@@ -90,7 +94,7 @@ static void set_timeslot_active_status(bool active) {
 static mpsl_timeslot_signal_return_param_t *
 mpsl_timeslot_callback(mpsl_timeslot_session_id_t session_id,
                        uint32_t signal_type) {
-    (void)session_id;
+    session_id;
     static bool timeslot_extension_failed;
     mpsl_timeslot_signal_return_param_t *p_ret_val = NULL;
 
@@ -107,7 +111,8 @@ mpsl_timeslot_callback(mpsl_timeslot_session_id_t session_id,
         nrf_timer_bit_width_set(MPSL_TIMER0, NRF_TIMER_BIT_WIDTH_32);
 
         /* CC0: trigger extension request before slot end. */
-        nrf_timer_cc_set(MPSL_TIMER0, NRF_TIMER_CC_CHANNEL0, TIMER_EXPIRY_US_EARLY);
+        nrf_timer_cc_set(MPSL_TIMER0, NRF_TIMER_CC_CHANNEL0,
+                         TIMER_EXPIRY_US_EARLY);
         nrf_timer_int_enable(MPSL_TIMER0, NRF_TIMER_INT_COMPARE0_MASK);
 
         /* CC1: fallback – request a fresh slot if extension failed. */
@@ -133,7 +138,8 @@ mpsl_timeslot_callback(mpsl_timeslot_session_id_t session_id,
                 MPSL_TIMESLOT_SIGNAL_ACTION_EXTEND;
             signal_callback_return_param.params.extend.length_us =
                 TIMESLOT_LENGTH_US;
-        } else if (nrf_timer_event_check(MPSL_TIMER0, NRF_TIMER_EVENT_COMPARE1)) {
+        } else if (nrf_timer_event_check(MPSL_TIMER0,
+                                         NRF_TIMER_EVENT_COMPARE1)) {
             /* CC1: extension window is over. */
             nrf_timer_int_disable(MPSL_TIMER0, NRF_TIMER_INT_COMPARE1_MASK);
             nrf_timer_event_clear(MPSL_TIMER0, NRF_TIMER_EVENT_COMPARE1);
@@ -277,7 +283,8 @@ static void mpsl_nonpreemptible_thread(void) {
 
         switch (api_call) {
         case OPEN_SESSION:
-            err = mpsl_timeslot_session_open(mpsl_timeslot_callback, &session_id);
+            err =
+                mpsl_timeslot_session_open(mpsl_timeslot_callback, &session_id);
             if (err) {
                 LOG_ERR("session open error: %d", err);
                 k_oops();

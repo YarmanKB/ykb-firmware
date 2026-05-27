@@ -68,12 +68,10 @@ splitlink_bt_notify_disconnected(struct splitlink_bt_data *data) {
 }
 
 static inline void splitlink_bt_connect_work_handler(struct k_work *work) {
-    ARG_UNUSED(work);
     splitlink_notify_connected();
 }
 
 static inline void splitlink_bt_disconnect_work_handler(struct k_work *work) {
-    ARG_UNUSED(work);
     splitlink_notify_disconnected();
 }
 

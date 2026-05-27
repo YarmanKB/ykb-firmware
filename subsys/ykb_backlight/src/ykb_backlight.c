@@ -3,10 +3,9 @@
 #include "generated_backlight_resources.h"
 #include "lumiscript_vm.h"
 
+#include <subsys/kb_handler.h>
 #include <subsys/kb_settings.h>
 #include <subsys/zephyr_user_helpers.h>
-
-#include <drivers/kscan.h>
 
 #include <math.h>
 #include <stdio.h>
@@ -341,7 +340,7 @@ static void ykb_backlight_thread_handler(void *a, void *b, void *c) {
     }
 }
 
-static void kscan_on_event(uint16_t index, bool value) {
+static void kb_handler_on_event(uint16_t index, bool value) {
     if (!layout || index >= layout->key_count) {
         return;
     }
@@ -351,7 +350,7 @@ static void kscan_on_event(uint16_t index, bool value) {
     k_mutex_unlock(&ykb_bl_mut);
 }
 
-static void kscan_on_value_changed(uint16_t index, uint16_t value) {
+static void kb_handler_on_value_changed(uint16_t index, uint16_t value) {
     if (!layout || index >= layout->key_count) {
         return;
     }
@@ -361,9 +360,9 @@ static void kscan_on_value_changed(uint16_t index, uint16_t value) {
     k_mutex_unlock(&ykb_bl_mut);
 }
 
-KSCAN_CB_DEFINE(ykb_backlight) = {
-    .on_event = kscan_on_event,
-    .on_new_value = kscan_on_value_changed,
+KB_HANDLER_CB_DEFINE(ykb_backlight) = {
+    .on_event = kb_handler_on_event,
+    .on_new_value = kb_handler_on_value_changed,
 };
 
 static bool init_success = false;

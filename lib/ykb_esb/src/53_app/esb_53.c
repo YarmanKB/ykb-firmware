@@ -60,8 +60,6 @@ static bool rpc_initialized;
 static bool rpc_bound;
 
 static void rpc_bound_handler(const struct nrf_rpc_group *group) {
-    ARG_UNUSED(group);
-
     rpc_bound = true;
 }
 
@@ -264,7 +262,9 @@ static int serialization_init(void) {
 
         int err = nrf_rpc_init(err_handler);
         if (err) {
-            LOG_ERR("nrf_rpc_init failed: %d – will retry via rpc_bound_handler", err);
+            LOG_ERR(
+                "nrf_rpc_init failed: %d – will retry via rpc_bound_handler",
+                err);
             /* Do NOT return -EAGAIN here; fall through and wait for
              * rpc_bound_handler to set rpc_bound when cpunet is ready. */
         } else {

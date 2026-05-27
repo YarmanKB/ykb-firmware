@@ -44,16 +44,11 @@ static int splitlink_ykb_esb_send(uint8_t *data, size_t data_len) {
 }
 
 static void connect_work_handler(struct k_work *work) {
-    ARG_UNUSED(work);
     splitlink_notify_connected();
 }
 
 static void disconnect_work_handler(struct k_work *work) {
     // Oopsie, we got a disconnect...
-    struct delayable_work_ctx *dev_work =
-        CONTAINER_OF(work, struct delayable_work_ctx, d_work.work);
-    ARG_UNUSED(dev_work);
-
     struct splitlink_data *data = &splitlink_esb_data;
     data->connected = false;
     splitlink_notify_disconnected();
@@ -66,7 +61,6 @@ static void receiving_work_handler(struct k_work *work) {
 }
 
 static void on_esb_callback(ykb_esb_event_t *event, void *user_ptr) {
-    ARG_UNUSED(user_ptr);
     struct splitlink_data *dev_data = &splitlink_esb_data;
     if (event->evt_type == YKB_ESB_EVT_RX) {
         // If not connected, we got a connection now
@@ -89,9 +83,6 @@ static void on_esb_callback(ykb_esb_event_t *event, void *user_ptr) {
 }
 
 static void init_work_handler(struct k_work *work) {
-    struct delayable_work_ctx *init_work =
-        CONTAINER_OF(work, struct delayable_work_ctx, d_work.work);
-    ARG_UNUSED(init_work);
     const struct splitlink_config *cfg = &splitlink_esb_config;
     struct splitlink_data *data = &splitlink_esb_data;
 
@@ -133,4 +124,5 @@ static int splitlink_esb_init(void) {
 
 static int splitlink_esb_sys_init(void) { return splitlink_esb_init(); }
 
-SYS_INIT(splitlink_esb_sys_init, POST_KERNEL, CONFIG_SPLITLINK_YKB_ESB_INIT_PRIORITY);
+SYS_INIT(splitlink_esb_sys_init, POST_KERNEL,
+         CONFIG_SPLITLINK_YKB_ESB_INIT_PRIORITY);

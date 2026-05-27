@@ -62,8 +62,6 @@ static int send_vendor_packet_cb(const struct bt_connect_conn_state *state,
 
 static int send_vendor_packet(const uint8_t *data, size_t len,
                               void *user_data) {
-    ARG_UNUSED(user_data);
-
     struct {
         const uint8_t *data;
         size_t len;
@@ -78,8 +76,6 @@ static int send_vendor_packet(const uint8_t *data, size_t len,
 
 static void hids_vendor_outp_rep_handler(struct bt_hids_rep *rep,
                                          struct bt_conn *conn, bool write) {
-    ARG_UNUSED(conn);
-
     if (!write) {
         return;
     }

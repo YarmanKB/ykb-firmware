@@ -7,7 +7,6 @@
 #include <zephyr/toolchain.h>
 
 struct kscan_cb {
-    void (*on_event)(uint16_t index, bool pressed);
     void (*on_new_value)(uint16_t index, uint16_t value);
 };
 
@@ -15,30 +14,10 @@ struct kscan_cb {
     static STRUCT_SECTION_ITERABLE(kscan_cb, __kscan_cb__##name)
 
 __subsystem struct kscan_driver_api {
-    int (*set_thresholds)(const struct device *dev, uint16_t *thresholds);
-    int (*get_thresholds)(const struct device *dev, uint16_t *thresholds);
     int (*get_key_amount)(const struct device *dev);
     int (*get_idx_offset)(const struct device *dev);
     int (*get_values)(const struct device *dev, uint16_t *values);
 };
-
-// Set thresholds for the keys kscan instance is managing.
-// Thresholds are 10 bit non-zero values which define at what point each key is
-// considered pressed.
-// Thresholds map one to one to the keys controlled by the
-// KScan instance. So thresholds length must be the same as get_key_amount()
-// Caller must allocate thresholds array of size get_key_amount()
-//
-// Returns 0 on success, negative value otherwise
-__syscall int kscan_set_thresholds(const struct device *dev,
-                                   uint16_t *thresholds);
-
-// Get current thresholds.
-// Caller must allocate thresholds array of size get_key_amount()
-//
-// Returns 0 on success, negative value otherwise
-__syscall int kscan_get_thresholds(const struct device *dev,
-                                   uint16_t *thresholds);
 
 // Get the amount of keys managed by the KScan instance.
 //
@@ -52,22 +31,12 @@ __syscall int kscan_get_key_amount(const struct device *dev);
 __syscall int kscan_get_idx_offset(const struct device *dev);
 
 // Get current ADC values for each managed key.
-// Caller must allocate values array of size get_key_amount()
+// Caller must allocate values array of size get_key_amount().
+// It is genuinely better to use KSCAN_CB_DEFINE on_new_value callback instead
+// to not worry about managing KScan instances.
 //
 // Returns 0 on success, negative value otherwise
 __syscall int kscan_get_values(const struct device *dev, uint16_t *values);
-
-static inline int z_impl_kscan_set_thresholds(const struct device *dev,
-                                              uint16_t *thresholds) {
-    __ASSERT_NO_MSG(DEVICE_API_GET(kscan, dev));
-    return DEVICE_API_GET(kscan, dev)->set_thresholds(dev, thresholds);
-}
-
-static inline int z_impl_kscan_get_thresholds(const struct device *dev,
-                                              uint16_t *thresholds) {
-    __ASSERT_NO_MSG(DEVICE_API_GET(kscan, dev));
-    return DEVICE_API_GET(kscan, dev)->get_thresholds(dev, thresholds);
-}
 
 static inline int z_impl_kscan_get_key_amount(const struct device *dev) {
     __ASSERT_NO_MSG(DEVICE_API_GET(kscan, dev));

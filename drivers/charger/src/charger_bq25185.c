@@ -179,9 +179,6 @@ static void bq25185_work_handler(struct k_work *work) {
 
 static void bq25185_gpio_cb(const struct device *port, struct gpio_callback *cb,
                             gpio_port_pins_t pins) {
-    ARG_UNUSED(port);
-    ARG_UNUSED(pins);
-
     struct bq25185_pin_data *pin =
         CONTAINER_OF(cb, struct bq25185_pin_data, cb);
     struct bq25185_data *data = pin->parent;
@@ -319,10 +316,6 @@ static int bq25185_get_property(const struct device *dev,
 static int bq25185_set_property(const struct device *dev,
                                 const charger_prop_t prop,
                                 const union charger_propval *val) {
-    ARG_UNUSED(dev);
-    ARG_UNUSED(prop);
-    ARG_UNUSED(val);
-
     return -ENOTSUP;
 }
 

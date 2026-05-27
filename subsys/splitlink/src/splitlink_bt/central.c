@@ -55,7 +55,8 @@ static void splitlink_bt_request_link_updates(struct bt_conn *conn) {
     }
 }
 
-static void splitlink_bt_reset_discovery_state(struct splitlink_bt_data *dev_data) {
+static void
+splitlink_bt_reset_discovery_state(struct splitlink_bt_data *dev_data) {
     dev_data->notify_enabled = false;
     dev_data->service_start_handle = 0;
     dev_data->service_end_handle = 0;
@@ -105,9 +106,6 @@ static int splitlink_bt_send(uint8_t *data, size_t data_len) {
 static uint8_t splitlink_bt_notify_cb(struct bt_conn *conn,
                                       struct bt_gatt_subscribe_params *params,
                                       const void *data, uint16_t length) {
-    ARG_UNUSED(conn);
-    ARG_UNUSED(params);
-
     struct splitlink_bt_data *dev_data = &splitlink_bt_data;
 
     if (!data) {
@@ -210,10 +208,8 @@ splitlink_bt_discover_cb(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 
 static void splitlink_bt_mtu_exchanged(struct bt_conn *conn, uint8_t err,
                                        struct bt_gatt_exchange_params *params) {
-    ARG_UNUSED(params);
-
     struct splitlink_bt_data *dev_data = &splitlink_bt_data;
-    (void)k_work_cancel_delayable(&dev_data->mtu_fallback_work);
+    k_work_cancel_delayable(&dev_data->mtu_fallback_work);
 
     if (err) {
         LOG_WRN("Splitlink BT MTU exchange failed (%u)", err);
@@ -306,9 +302,8 @@ static void splitlink_bt_device_found(const bt_addr_le_t *addr, int8_t rssi,
         return;
     }
 
-    err = bt_conn_le_create(
-        addr, BT_CONN_LE_CREATE_CONN, BT_LE_CONN_PARAM_DEFAULT,
-        &splitlink_bt_data.conn);
+    err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN,
+                            BT_LE_CONN_PARAM_DEFAULT, &splitlink_bt_data.conn);
     if (err) {
         LOG_ERR("Splitlink BT connect failed (%d), restarting scan", err);
         splitlink_bt_data.conn = NULL;
@@ -393,7 +388,7 @@ static void splitlink_bt_disconnected(struct bt_conn *conn, uint8_t reason) {
     }
 
     LOG_WRN("Splitlink BT disconnected: reason=0x%02x", reason);
-    (void)k_work_cancel_delayable(&dev_data->mtu_fallback_work);
+    k_work_cancel_delayable(&dev_data->mtu_fallback_work);
 
     if (dev_data->subscribe_params.value_handle != 0) {
         bt_gatt_unsubscribe(conn, &dev_data->subscribe_params);

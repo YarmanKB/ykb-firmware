@@ -85,9 +85,6 @@ typedef struct {
     double move_y_k;
     double scroll_k;
 
-    uint16_t move_keys_deadzones[KB_MOUSEEMU_MOVE_KEYS_MAX];
-    uint16_t scroll_keys_deadzones[KB_MOUSEEMU_SCROLL_KEYS_MAX];
-
 } kb_mouseemu_settings_t;
 
 typedef struct {
@@ -97,6 +94,7 @@ typedef struct {
     uint16_t thresholds[TOTAL_KEY_COUNT];
     uint16_t minimums[TOTAL_KEY_COUNT];
     uint16_t maximums[TOTAL_KEY_COUNT];
+    uint16_t deadzones[TOTAL_KEY_COUNT];
 
     uint8_t mappings_layer1[TOTAL_KEY_COUNT];
     uint8_t mappings_layer2[TOTAL_KEY_COUNT];
