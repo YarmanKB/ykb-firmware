@@ -27,6 +27,14 @@ enum request_type {
     REQUEST_CLEAR_LUMISCRIPT_SLOT = 7U,
     REQUEST_RENAME_LUMISCRIPT_SLOT = 8U,
 #endif // CONFIG_YKB_BACKLIGHT
+
+#if CONFIG_YKB_BATTSENSE
+    REQUEST_GET_BATTERY_STATE = 9U,
+#endif // CONFIG_YKB_BATTSENSE
+
+#if CONFIG_SPLITLINK_SYNC_MASTER
+    REQUEST_GET_SECONDARY_BATTERY_STATE = 10U,
+#endif // CONFIG_SPLITLINK_SYNC_MASTER
 };
 
 enum response_type {
@@ -42,6 +50,21 @@ enum response_type {
     RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK = 7U,
     RESPONSE_RENAME_LUMISCRIPT_SLOT_OK = 8U,
 #endif // CONFIG_YKB_BACKLIGHT
+
+#if CONFIG_YKB_BATTSENSE
+    RESPONSE_GET_BATTERY_STATE = 9U,
+#endif // CONFIG_YKB_BATTSENSE
+
+#if CONFIG_SPLITLINK_SYNC_MASTER
+    // CONFIG_SPLITLINK_SYNC_MASTER here means 2 things:
+    // 1. It is a split keyboard.
+    // 2. SplitlinkSync is enabled and battery state
+    // is transmitted from slave to master.
+    //
+    // If slave keyboard doesn't have the battery
+    // we will just return error or zeros I guess.
+    RESPONSE_GET_SECONDARY_BATTERY_STATE = 10U,
+#endif // CONFIG_SPLITLINK_SYNC_MASTER
 
     RESPONSE_ERROR = 255U,
 };

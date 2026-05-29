@@ -41,6 +41,7 @@ typedef struct __packed {
     const uint16_t kb_fn_shortcuts_max;
 
     const bool splitlink : 1;
+    const bool splitlink_sync : 1;
     const bool ykb_backlight : 1;
     const bool ykb_battsense : 1;
     const bool ykb_battsense_pw_cutoff_present : 1;
@@ -78,6 +79,7 @@ typedef struct __packed {
         .kb_fn_shortcuts_max = CONFIG_KB_SETTINGS_FN_SHORTCUTS_MAX,            \
                                                                                \
         FEATURE(splitlink, CONFIG_SPLITLINK),                                  \
+        FEATURE(splitlink_sync, CONFIG_SPLITLINK_SYNC_MASTER),                 \
                                                                                \
         FEATURE(ykb_backlight, CONFIG_YKB_BACKLIGHT),                          \
         FEATURE_DEP(ykb_backlight_max_brightness_percent,                      \

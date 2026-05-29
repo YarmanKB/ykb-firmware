@@ -20,11 +20,7 @@ int splitlink_sync_slave_attach_kb_handler(void);
 
 // Battery notifications, connect/disconnect on the other hand might be used
 // in different subsystems
-#if CONFIG_SPLITLINK_SYNC_MASTER
 #define SPLITLINK_SYNC_CB(name)                                                \
     STRUCT_SECTION_ITERABLE(splitlink_sync_cb, splitlink_sync_cb_##name)
-#else
-#define SPLITLINK_SYNC_CB(name)
-#endif // CONFIG_SPLITLINK_SYNC_MASTER
 
 #endif // SUBSYS_SPLITLINK_SYNC_H

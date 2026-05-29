@@ -1,6 +1,7 @@
 #include <subsys/vendor_hid_protocol.h>
 
 #include <subsys/kb_handler.h>
+#include <subsys/splitlink_sync.h>
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -18,6 +19,15 @@ static kb_settings_t settings_snap;
 static vendor_hid_proto_script_slot_packet_t script_slot_snap;
 static vendor_hid_proto_script_slot_info_t script_slot_info_snap;
 #endif // CONFIG_YKB_BACKLIGHT
+
+#if CONFIG_YKB_BATTSENSE
+static ykb_battsense_state_t batt_state;
+#endif // CONFIG_YKB_BATTSENSE
+
+#if CONFIG_SPLITLINK_SYNC_MASTER
+static ykb_battsense_state_t secondary_batt_state = {0};
+static K_MUTEX_DEFINE(secondary_batt_state_mut);
+#endif // CONFIG_SPLITLINK_SYNC_MASTER
 
 static kb_settings_t *vendor_hid_protocol_get_settings(void) {
     int err = kb_settings_get(&settings_snap);
@@ -143,6 +153,29 @@ static int vendor_hid_protocol_rename_script_slot(
 
 #endif // CONFIG_YKB_BACKLIGHT
 
+#if CONFIG_YKB_BATTSENSE
+
+static inline int
+vendor_hid_protocol_get_battery_state(ykb_battsense_state_t *state) {
+    return ykb_battsense_get_state(state);
+}
+
+#endif // CONFIG_YKB_BATTSENSE
+
+#if CONFIG_SPLITLINK_SYNC_MASTER
+
+static void on_slave_battery_state(ykb_battsense_state_t *state) {
+    k_mutex_lock(&secondary_batt_state_mut, K_FOREVER);
+    memcpy(&secondary_batt_state, state, sizeof(ykb_battsense_state_t));
+    k_mutex_unlock(&secondary_batt_state_mut);
+}
+
+SPLITLINK_SYNC_CB(vendor_hid) = {
+    .on_slave_battery_state = on_slave_battery_state,
+};
+
+#endif // CONFIG_SPLITLINK_SYNC_MASTER
+
 static void response_work_handler(struct k_work *work) {
     vendor_hid_protocol_ctx_t *ctx =
         CONTAINER_OF(work, vendor_hid_protocol_ctx_t, response_work);
@@ -235,6 +268,36 @@ static void response_work_handler(struct k_work *work) {
         break;
     }
 #endif // CONFIG_YKB_BACKLIGHT
+#if CONFIG_YKB_BATTSENSE
+    case RESPONSE_GET_BATTERY_STATE: {
+        int err = vendor_hid_protocol_get_battery_state(&batt_state);
+        if (err) {
+            response_code = RESPONSE_ERROR;
+            data = &response_code;
+            len = sizeof(response_code);
+            break;
+        }
+        response_code = RESPONSE_GET_BATTERY_STATE;
+        data = (uint8_t *)&batt_state;
+        len = sizeof(batt_state);
+        break;
+    }
+#endif // CONFIG_YKB_BATTSENSE
+#if CONFIG_SPLITLINK_SYNC_MASTER
+    case RESPONSE_GET_SECONDARY_BATTERY_STATE: {
+        static ykb_battsense_state_t secondary_batt_state_snap;
+
+        k_mutex_lock(&secondary_batt_state_mut, K_FOREVER);
+        memcpy(&secondary_batt_state_snap, &secondary_batt_state,
+               sizeof(secondary_batt_state_snap));
+        k_mutex_unlock(&secondary_batt_state_mut);
+
+        response_code = RESPONSE_GET_SECONDARY_BATTERY_STATE;
+        data = (uint8_t *)&secondary_batt_state_snap;
+        len = sizeof(secondary_batt_state_snap);
+        break;
+    }
+#endif // CONFIG_SPLITLINK_SYNC_MASTER
     case RESPONSE_ERROR:
     default: {
         response_code = RESPONSE_ERROR;
@@ -373,6 +436,18 @@ int vendor_hid_protocol_parse(vendor_hid_protocol_ctx_t *ctx,
         break;
     }
 #endif // CONFIG_YKB_BACKLIGHT
+#if CONFIG_YKB_BATTSENSE
+    case REQUEST_GET_BATTERY_STATE: {
+        ctx->current_response = RESPONSE_GET_BATTERY_STATE;
+        break;
+    }
+#endif // CONFIG_YKB_BATTSENSE
+#if CONFIG_SPLITLINK_SYNC_MASTER
+    case REQUEST_GET_SECONDARY_BATTERY_STATE: {
+        ctx->current_response = RESPONSE_GET_SECONDARY_BATTERY_STATE;
+        break;
+    }
+#endif // CONFIG_SPLITLINK_SYNC_MASTER
     default: {
         LOG_ERR("Unknown request type %u", request->header.type);
         ctx->current_response = RESPONSE_ERROR;
