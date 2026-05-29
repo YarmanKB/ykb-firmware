@@ -125,20 +125,12 @@ void splitlink_sync_battery_state_received(
     const splitlink_battery_state_t *state) {}
 
 int splitlink_sync_slave_attach_kb_handler(void) {
-    int err;
-
-    err = kb_handler_check_kscans_ready();
+    int err = splitlink_sync_init();
     if (err) {
         return err;
     }
 
-    err =
-        kb_handler_validate_kscan_topology(CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE);
-    if (err) {
-        return err;
-    }
-
-    return splitlink_sync_init();
+    return kb_handler_core_init();
 }
 
 static void on_new_value(uint16_t idx, uint16_t value) {

@@ -119,7 +119,6 @@ void splitlink_sync_battery_state_received(
 
 int splitlink_sync_master_attach_kb_handler(void) {
     int err = splitlink_sync_init();
-
     if (err) {
         return err;
     }

@@ -81,15 +81,7 @@ struct kbh_runtime_state {
 K_MSGQ_DEFINE(kbh_core_msgq, sizeof(struct kbh_thread_msg),
               CONFIG_KB_HANDLER_MSGQ_SIZE, 4);
 
-static void notify_value(uint16_t key, uint16_t value) {
-    STRUCT_SECTION_FOREACH(kb_handler_cb, callbacks) {
-        if (callbacks->on_new_value) {
-            callbacks->on_new_value(key, value);
-        }
-    }
-}
-
-static void notify_transition(uint16_t key, bool pressed) {
+static inline void notify_transition(uint16_t key, bool pressed) {
     STRUCT_SECTION_FOREACH(kb_handler_cb, callbacks) {
         if (callbacks->on_event) {
             callbacks->on_event(key, pressed);
@@ -616,7 +608,11 @@ static inline void notify_value_if_changed(struct kbh_runtime_state *st,
     }
 
     st->notified_press_percent[key] = press_percent;
-    notify_value(key, press_percent);
+    STRUCT_SECTION_FOREACH(kb_handler_cb, callbacks) {
+        if (callbacks->on_new_value) {
+            callbacks->on_new_value(key, press_percent);
+        }
+    }
 }
 
 static inline uint16_t
@@ -753,9 +749,9 @@ static inline void send_mouse_report_if_changed(struct kbh_runtime_state *st) {
 
     report_changed =
         !mouse_reports_equal(&st->mouse_report, &st->prev_mouse_report);
-    repeat_due = mouse_report_has_motion(&st->mouse_report) &&
-                 (now_ms - st->last_mouse_report_ms) >=
-                     KBH_MOUSEEMU_REPEAT_INTERVAL_MS;
+    repeat_due =
+        mouse_report_has_motion(&st->mouse_report) &&
+        (now_ms - st->last_mouse_report_ms) >= KBH_MOUSEEMU_REPEAT_INTERVAL_MS;
     should_send = report_changed || repeat_due;
 
     if (should_send) {
@@ -1105,9 +1101,6 @@ static void mouseemu_check(uint16_t total_key_count,
 }
 
 static void kb_handler_on_settings_update(const kb_settings_t *settings) {
-    struct kbh_thread_msg msg = {
-        .type = KBH_THREAD_MSG_SETTINGS_SYNC,
-    };
     bool from_core_thread =
         thread_started && (k_current_get() == &kbh_core_thread);
 
@@ -1138,10 +1131,13 @@ static void kb_handler_on_settings_update(const kb_settings_t *settings) {
         thread_started = true;
     }
 
+    // If called from core thread might overflow the msgq
     if (from_core_thread) {
         return;
     }
-
+    struct kbh_thread_msg msg = {
+        .type = KBH_THREAD_MSG_SETTINGS_SYNC,
+    };
     int err = k_msgq_put(&kbh_core_msgq, &msg, K_NO_WAIT);
     YKB_METRICS_KB_MSGQ_PUT(YKB_METRICS_KB_MSG_SETTINGS_SYNC, err,
                             k_msgq_num_used_get(&kbh_core_msgq));
