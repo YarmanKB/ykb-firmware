@@ -7,13 +7,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#if CONFIG_YKB_BACKLIGHT
 #include <subsys/ykb_backlight.h>
-#endif // CONFIG_YKB_BACKLIGHT
-
-#if CONFIG_YKB_BATTSENSE
 #include <subsys/ykb_battsense.h>
-#endif // CONFIG_YKB_BATTSENSE
+#include <subsys/ykb_power.h>
 
 #if CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE
 #define TOTAL_KEY_COUNT                                                        \
@@ -114,6 +110,10 @@ typedef struct {
 #if CONFIG_YKB_BACKLIGHT
     ykb_backlight_settings_t backlight;
 #endif // CONFIG_YKB_BACKLIGHT
+
+#if CONFIG_YKB_POWER
+    ykb_power_settings_t power;
+#endif //  CONFIG_YKB_POWER
 
 } kb_settings_t;
 

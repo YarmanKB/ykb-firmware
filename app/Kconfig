@@ -22,6 +22,9 @@ config YKB_BATTSENSE
 config YKB_BACKLIGHT
 	default y
 
+config YKB_POWER
+    default y
+
 module = APP
 module-str = APP
 source "subsys/logging/Kconfig.template.log_config"

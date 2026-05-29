@@ -1,6 +1,7 @@
 #include <subsys/ykb_battsense.h>
 
 #include <subsys/kb_settings.h>
+#include <subsys/ykb_power.h>
 #include <subsys/zephyr_user_helpers.h>
 
 #include <zephyr/drivers/charger.h>
@@ -14,10 +15,6 @@ LOG_MODULE_REGISTER(ykb_battsense, CONFIG_YKB_BATTSENSE_LOG_LEVEL);
 
 static const struct device *charger = Z_USER_DEV(ykb_battsense_charger);
 static const struct device *fuel_gauge = Z_USER_DEV(ykb_battsense_fuel_gauge);
-static const struct gpio_dt_spec pw_cutoff_gpio =
-    GPIO_DT_SPEC_GET_OR(Z_USER_PATH, ykb_battsense_pw_cutoff_gpios, {0});
-
-#define PW_CUTOFF_PRESENT IS_ENABLED(CONFIG_YKB_BATTSENSE_PW_CUTOFF_PRESENT)
 
 static const ykb_battsense_settings_t battsense_default_settings = {
     .thread_sleep_ms = CONFIG_YKB_BATTSENSE_THREAD_DEFAULT_SLEEP_TIME,
@@ -54,9 +51,11 @@ static void battsense_thread_handler(void *a, void *b, void *c) {
         if (!err && charger_state.health == CHARGER_HEALTH_UNSPEC_FAILURE) {
             LOG_ERR("Charger health is CHARGER_HEALTH_UNSPEC_FAILURE, shutting "
                     "down.");
-            // TODO: maybe we can do some quick deinit before doing that
             k_mutex_unlock(&battsense_mut);
-            gpio_pin_set_dt(&pw_cutoff_gpio, 1);
+            err = ykb_power_schedule_shutdown(K_NO_WAIT);
+            if (err) {
+                LOG_ERR("Unable to schedule shutdown: %d", err);
+            }
             return;
         }
 #endif // CONFIG_YKB_BATTSENSE_SHUTOFF_ON_CHARGER_FAILURE
@@ -89,12 +88,11 @@ static void battsense_thread_handler(void *a, void *b, void *c) {
                     cb->on_critical_percentage(state);
                 }
             }
-            if (PW_CUTOFF_PRESENT) {
-                // TODO: maybe we can do some quick deinit before doing that
-                k_mutex_unlock(&battsense_mut);
-                gpio_pin_set_dt(&pw_cutoff_gpio, 1);
-                return;
+            err = ykb_power_schedule_shutdown(K_NO_WAIT);
+            if (err && err != -ENODEV) {
+                LOG_ERR("Unable to schedule shutdown: %d", err);
             }
+            return;
         } else if (old_state.percentage > state.percentage &&
                    state.percentage <= battsense_settings.low_threshold) {
             STRUCT_SECTION_FOREACH(ykb_battsense_cb, cb) {
@@ -121,18 +119,6 @@ static void battsense_thread_handler(void *a, void *b, void *c) {
 
 static int ykb_battsense_init(void) {
     int err;
-
-    if (PW_CUTOFF_PRESENT) {
-        if (!gpio_is_ready_dt(&pw_cutoff_gpio)) {
-            LOG_ERR("pw_cutoff_gpio is not ready.");
-            return -1;
-        }
-        err = gpio_pin_configure_dt(&pw_cutoff_gpio, GPIO_OUTPUT_INACTIVE);
-        if (err) {
-            LOG_ERR("pw_cutoff_gpio configure: err %d", err);
-            return err;
-        }
-    }
 
     if (!device_is_ready(charger)) {
         LOG_ERR("Charger device %s is not ready.", charger->name);

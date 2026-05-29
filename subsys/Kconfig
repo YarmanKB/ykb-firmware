@@ -9,5 +9,6 @@ menu "YKB Subsystems"
     rsource "kb_handler/Kconfig"
     rsource "ykb_backlight/Kconfig"
     rsource "ykb_metrics/Kconfig"
+    rsource "ykb_power/Kconfig"
 
 endmenu

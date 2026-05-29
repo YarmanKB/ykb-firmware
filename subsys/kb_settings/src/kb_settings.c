@@ -8,6 +8,9 @@
 #ifdef CONFIG_YKB_BATTSENSE
 #include <subsys/ykb_battsense.h>
 #endif // CONFIG_YKB_BATTSENSE
+#ifdef CONFIG_YKB_POWER
+#include <subsys/ykb_power.h>
+#endif // CONFIG_YKB_POWER
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -25,7 +28,7 @@
 LOG_MODULE_REGISTER(kb_settings, CONFIG_KB_SETTINGS_LOG_LEVEL);
 
 // Increment every time kb_settings_image_t or it's contents change
-#define KB_SETTINGS_IMAGE_VERSION 2
+#define KB_SETTINGS_IMAGE_VERSION 1
 
 BUILD_ASSERT(GENERATED_DEFAULT_SETTINGS_KEY_COUNT == TOTAL_KEY_COUNT,
              "generated default settings should match TOTAL_KEY_COUNT");
@@ -110,6 +113,13 @@ static int kb_settings_load_defaults(void) {
     memcpy(&kb_settings.battsense, default_battsense_settings,
            sizeof(kb_settings.battsense));
 #endif // CONFIG_YKB_BATTSENSE
+
+#if CONFIG_YKB_POWER
+    const ykb_power_settings_t *default_power_settings =
+        ykb_power_get_default_settings();
+    memcpy(&kb_settings.power, default_power_settings,
+           sizeof(kb_settings.power));
+#endif // CONFIG_YKB_POWER
 
 cleanup:
 

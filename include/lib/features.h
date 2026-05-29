@@ -15,7 +15,8 @@
 #define FEATURES_MAX_VENDOR_NAME 10
 #define FEATURES_MAX_SOC_NAME 10
 
-#define FEATURES_VERSION_2 2U
+#define FEATURES_VERSION_1 1U
+#define FEATURES_VERSION FEATURES_VERSION_1
 
 typedef struct __packed {
     const uint8_t features_version;
@@ -39,8 +40,6 @@ typedef struct __packed {
     const uint16_t ykb_backlight_script_name_max_len;
     const uint16_t kb_fn_shortcuts_max;
 
-    const uint32_t storage_size;
-
     const bool splitlink : 1;
     const bool ykb_backlight : 1;
     const bool ykb_battsense : 1;
@@ -52,6 +51,11 @@ typedef struct __packed {
     const bool usb_connect_kbd : 1;
     const bool usb_connect_mouse : 1;
     const bool usb_connect_vendor : 1;
+    const bool ykb_power : 1;
+    const bool ykb_power_indicator : 1;
+    const bool ykb_power_indicator_brightness_support : 1;
+    const bool ykb_power_button : 1;
+    const bool ykb_power_shutdown_gpios : 1;
 
 } device_features;
 
@@ -62,7 +66,7 @@ typedef struct __packed {
 
 #define FEATURES_DEFINE(name)                                                  \
     device_features name = {                                                   \
-        .features_version = FEATURES_VERSION_2,                                \
+        .features_version = FEATURES_VERSION,                                  \
         .board_name = CONFIG_BOARD,                                            \
         .rev_name = CONFIG_BOARD_REVISION,                                     \
         .vendor_name = "YarmanKB",                                             \
@@ -109,6 +113,14 @@ typedef struct __packed {
         FEATURE(usb_connect_kbd, CONFIG_USB_CONNECT_KBD),                      \
         FEATURE(usb_connect_mouse, CONFIG_USB_CONNECT_MOUSE),                  \
         FEATURE(usb_connect_vendor, CONFIG_USB_CONNECT_VENDOR),                \
+                                                                               \
+        FEATURE(ykb_power, CONFIG_YKB_POWER),                                  \
+        FEATURE(ykb_power_indicator, CONFIG_YKB_POWER_INDICATOR_PRESENT),      \
+        FEATURE(ykb_power_indicator_brightness_support,                        \
+                CONFIG_YKB_POWER_INDICATOR_BRIGHTNESS_SUPPORT),                \
+        FEATURE(ykb_power_button, CONFIG_YKB_POWER_BUTTON_PRESENT),            \
+        FEATURE(ykb_power_shutdown_gpios,                                      \
+                CONFIG_YKB_POWER_SHUTDOWN_GPIOS_PRESENT),                      \
     }
 
 #endif // YKB_FEATURES_H

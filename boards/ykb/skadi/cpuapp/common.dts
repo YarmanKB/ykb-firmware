@@ -15,6 +15,12 @@
 		};
 	};
 
+	zephyr,user {
+		ykb-power-button = <&button0>;
+		ykb-power-indicator = <&led1>;
+		ykb-power-shutdown-gpios = <&gpio0 14 GPIO_ACTIVE_HIGH>;
+	};
+
 	aliases {
 		mcuboot-button0 = &button0;
 		mcuboot-led0 = &led0;
@@ -37,11 +43,20 @@
 		};
 	};
 
-	leds {
+	// We are using the same LED as PWM in the firmware itself
+	// and as GPIO LED in MCUBoot (MCUBoot doesn't support pwm-leds for some reason)
+	pwm-leds {
+		compatible = "pwm-leds";
+		led1: led1 {
+			pwms = <&pwm0 0 PWM_MSEC(20) PWM_POLARITY_NORMAL>;
+			label = "Power LED";
+		};
+	};
+	gpio-leds {
 		compatible = "gpio-leds";
 		led0: led0 {
 			gpios = <&gpio0 15 GPIO_ACTIVE_LOW>;
-			label = "Debug LED";
+			label = "Recovery LED";
 		};
 	};
 
@@ -216,6 +231,13 @@ zephyr_udc0: &usbd {
 			reg = <0x000F0000 0x00010000>;
 		};
 	};
+};
+
+&pwm0 {
+	status = "okay";
+	pinctrl-0 = <&pwm0_default>;
+	pinctrl-1 = <&pwm0_sleep>;
+	pinctrl-names = "default", "sleep";
 };
 
 #include <nordic/nrf5340_sram_partition.dtsi>

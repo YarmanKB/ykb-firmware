@@ -1,0 +1,56 @@
+menuconfig YKB_POWER
+    bool "Enable YKB Power subsystem"
+    select LED if YKB_POWER_INDICATOR_PRESENT
+    select LED_PWM if YKB_POWER_INDICATOR_BRIGHTNESS_SUPPORT
+    select LED_GPIO if YKB_POWER_INDICATOR_PRESENT && !YKB_POWER_INDICATOR_BRIGHTNESS_SUPPORT
+    
+if YKB_POWER
+
+    module = YKB_POWER
+    module-str = ykb_power
+    source "subsys/logging/Kconfig.template.log_config"
+
+    ZEPHYR_USER := zephyr,user
+
+    config YKB_POWER_INDICATOR_PRESENT
+        bool
+        default y if $(dt_node_has_prop,/$(ZEPHYR_USER),ykb-power-indicator)
+
+    YKB_POWER_INDICATOR := $(dt_node_ph_prop_path,/$(ZEPHYR_USER),ykb-power-indicator)
+    YKB_POWER_INDICATOR_PARENT := $(dt_node_parent,$(YKB_POWER_INDICATOR))
+
+    # Not sure if this is the best way, works for now,
+    # since most likely it's just going to be
+    # 'gpio-leds' or 'pwm-leds' on most boards
+    config YKB_POWER_INDICATOR_BRIGHTNESS_SUPPORT
+        bool
+        depends on YKB_POWER_INDICATOR_PRESENT
+        default n if $(dt_node_has_compat,$(YKB_POWER_INDICATOR_PARENT),gpio-leds)
+        default y
+
+    config YKB_POWER_BUTTON_PRESENT
+        bool
+        default y if $(dt_node_has_prop,/$(ZEPHYR_USER),ykb-power-button)
+
+    config YKB_POWER_SHUTDOWN_GPIOS_PRESENT
+        bool
+        default y if $(dt_node_has_prop,/$(ZEPHYR_USER),ykb-power-shutdown-gpios)
+
+    config YKB_POWER_INIT_PRIORITY
+        int "YKB Power initialization priority"
+        default APPLICATION_INIT_PRIORITY
+
+    config YKB_POWER_THREAD_PRIORITY
+        int "YKB Power thread priority"
+        default 14
+
+    config YKB_POWER_THREAD_STACK_SIZE
+        int "YKB Power thread stack size"
+        default 1024
+
+    config YKB_POWER_THREAD_SLEEP_TIME
+        int "Thread sleep time in milliseconds"
+        default 3
+        range 1 100
+
+endif # YKB_POWER

@@ -5,7 +5,6 @@
 
 		ykb-battsense-charger = <&charger>;
 		ykb-battsense-fuel-gauge = <&fuel_gauge>;
-		ykb-battsense-pw-cutoff-gpios = <&gpio0 16 GPIO_ACTIVE_HIGH>;
 	};
 
 	charger: charger {
