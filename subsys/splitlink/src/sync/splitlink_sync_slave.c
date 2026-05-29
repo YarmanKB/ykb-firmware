@@ -152,7 +152,6 @@ static void on_new_value(uint16_t idx, uint16_t value) {
     if (atomic_compare_exchange_strong_explicit(&send_values_pending, &expected,
                                                 true, memory_order_relaxed,
                                                 memory_order_relaxed)) {
-        // TODO: do we really need 2ms here?
         k_work_schedule(&send_values_work, K_MSEC(0));
     }
 }
