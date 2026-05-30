@@ -2,7 +2,8 @@
 #include <subsys/splitlink_sync.h>
 
 #include <subsys/bt_connect.h>
-#include <subsys/kb_handler_internal_api.h>
+#include <subsys/kb_handler.h>
+#include <subsys/kb_handler_core.h>
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -58,7 +59,7 @@ void splitlink_sync_on_connect() {
         }
     }
 
-    if (!kb_handler_core_get_settings_snapshot(&splitlink_settings_tx)) {
+    if (!kb_settings_get(&splitlink_settings_tx)) {
         splitlink_sync_send_settings(&splitlink_settings_tx);
     }
 
@@ -81,6 +82,8 @@ void splitlink_sync_on_settings_update(const kb_settings_t *settings) {
     memcpy(&splitlink_settings_tx, settings, sizeof(splitlink_settings_tx));
     splitlink_sync_send_settings(&splitlink_settings_tx);
 }
+
+ON_SETTINGS_UPDATE_DEFINE(splitlink_sync, splitlink_sync_on_settings_update);
 
 void splitlink_sync_scripts_request_received(
     const splitlink_script_request_t *request) {
@@ -123,12 +126,6 @@ int splitlink_sync_master_attach_kb_handler(void) {
         return err;
     }
 
-    err = kb_handler_register_settings_update_cb(
-        splitlink_sync_on_settings_update);
-    if (err) {
-        return err;
-    }
-
     err = ykb_backlight_register_script_slot_update_cb(
         splitlink_sync_on_script_slot_update);
     if (err) {
@@ -136,12 +133,4 @@ int splitlink_sync_master_attach_kb_handler(void) {
     }
 
     return kb_handler_core_init();
-}
-
-void splitlink_sync_master_on_local_key_event(uint16_t idx, bool pressed) {
-    kb_handler_core_handle_key_event(idx, pressed);
-}
-
-void splitlink_sync_master_on_local_value(uint16_t idx, uint16_t value) {
-    kb_handler_core_handle_value(idx, value);
 }

@@ -21,7 +21,6 @@ static struct k_thread kbh_core_thread;
 static kb_settings_t settings_snapshot;
 static bool thread_started;
 static uint16_t values[TOTAL_KEY_COUNT];
-static kb_handler_settings_update_cb_t settings_update_cb;
 
 #define KBH_SLAVE_VALUES_CAPACITY                                              \
     ((KEY_COUNT_SLAVE > 0U) ? KEY_COUNT_SLAVE : 1U)
@@ -1116,10 +1115,6 @@ static void kb_handler_on_settings_update(const kb_settings_t *settings) {
     memcpy(&settings_snapshot, settings, sizeof(settings_snapshot));
     mouseemu_check(TOTAL_KEY_COUNT, &settings_snapshot.mouseemu);
 
-    if (settings_update_cb) {
-        settings_update_cb(&settings_snapshot);
-    }
-
     if (thread_started && !from_core_thread) {
         k_thread_resume(&kbh_core_thread);
     } else if (!thread_started) {
@@ -1148,15 +1143,6 @@ static void kb_handler_on_settings_update(const kb_settings_t *settings) {
 
 ON_SETTINGS_UPDATE_DEFINE(kbh_core, kb_handler_on_settings_update);
 
-int kb_handler_register_settings_update_cb(kb_handler_settings_update_cb_t cb) {
-    if (settings_update_cb && settings_update_cb != cb) {
-        return -EALREADY;
-    }
-
-    settings_update_cb = cb;
-    return 0;
-}
-
 int kb_handler_core_init(void) {
     int err;
 
@@ -1179,21 +1165,6 @@ int kb_handler_core_init(void) {
 
     mouseemu_check(TOTAL_KEY_COUNT, &settings_snapshot.mouseemu);
     return 0;
-}
-
-void kb_handler_core_handle_key_event(uint16_t key_index, bool pressed) {
-    struct kbh_thread_msg data = {
-        .type = KBH_THREAD_MSG_KEY,
-        .key = key_index,
-        .status = pressed,
-    };
-    int err = k_msgq_put(&kbh_core_msgq, &data, K_NO_WAIT);
-
-    YKB_METRICS_KB_MSGQ_PUT(YKB_METRICS_KB_MSG_KEY, err,
-                            k_msgq_num_used_get(&kbh_core_msgq));
-    if (err) {
-        LOG_WRN("Key event dropped for key %u", key_index);
-    }
 }
 
 void kb_handler_core_handle_value(uint16_t key_index, uint16_t value) {
@@ -1263,17 +1234,4 @@ void kb_handler_core_get_values(uint16_t *out_values, uint16_t count) {
     }
 
     memcpy(out_values, values, count * sizeof(uint16_t));
-}
-
-int kb_handler_core_get_settings_snapshot(kb_settings_t *settings) {
-    if (!settings) {
-        return -EINVAL;
-    }
-
-    memcpy(settings, &settings_snapshot, sizeof(*settings));
-    return 0;
-}
-
-void kb_handler_get_raw_values(uint16_t *values_out, uint16_t count) {
-    kb_handler_core_get_values(values_out, count);
 }

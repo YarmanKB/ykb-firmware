@@ -1,6 +1,6 @@
 #include <subsys/vendor_hid_protocol.h>
 
-#include <subsys/kb_handler.h>
+#include <subsys/kb_handler_core.h>
 #include <subsys/splitlink_sync.h>
 
 #include <zephyr/kernel.h>
@@ -191,7 +191,7 @@ static void response_work_handler(struct k_work *work) {
         break;
     }
     case RESPONSE_GET_VALUES: {
-        kb_handler_get_raw_values(values, TOTAL_KEY_COUNT);
+        kb_handler_core_get_values(values, TOTAL_KEY_COUNT);
         data = (uint8_t *)values;
         len = sizeof(values);
         break;

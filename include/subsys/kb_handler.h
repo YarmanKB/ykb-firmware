@@ -7,8 +7,6 @@
 #include <zephyr/sys/iterable_sections.h>
 #include <zephyr/toolchain.h>
 
-void kb_handler_get_raw_values(uint16_t *values, uint16_t count);
-
 #define KB_HANDLER_PRESS_PERCENT_MAX 100U
 
 struct kb_handler_cb {

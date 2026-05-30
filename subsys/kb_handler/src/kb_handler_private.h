@@ -2,7 +2,7 @@
 #define KB_HANDLER_PRIVATE_H
 
 #include <subsys/kb_handler.h>
-#include <subsys/kb_handler_internal_api.h>
+#include <subsys/kb_handler_core.h>
 #include <subsys/usb_connect.h>
 #include <subsys/zephyr_user_helpers.h>
 
@@ -17,6 +17,9 @@
 
 size_t kb_handler_kscan_count(void);
 const struct device *kb_handler_get_kscan(size_t idx);
+
+int kb_handler_check_kscans_ready(void);
+int kb_handler_validate_kscan_topology(uint16_t expected_key_count);
 
 void kb_handler_transport_send_kb_report(
     hid_kb_report_t *report, enum kb_handler_transport_priority prio);

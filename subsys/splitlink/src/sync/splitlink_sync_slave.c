@@ -1,7 +1,8 @@
 #include "splitlink_sync_private.h"
 #include <subsys/splitlink_sync.h>
 
-#include <subsys/kb_handler_internal_api.h>
+#include <subsys/kb_handler.h>
+#include <subsys/kb_handler_core.h>
 #include <subsys/ykb_battsense.h>
 
 #include <drivers/kscan.h>
