@@ -341,22 +341,48 @@ static void ykb_backlight_thread_handler(void *a, void *b, void *c) {
 }
 
 static void kb_handler_on_event(uint16_t index, bool value) {
-    if (!layout || index >= layout->key_count) {
+    uint16_t local_index = index;
+
+    if (!layout) {
+        return;
+    }
+
+#if CONFIG_KB_HANDLER_SPLITLINK_SLAVE
+    if (index < CONFIG_KB_SETTINGS_KEY_COUNT) {
+        return;
+    }
+    local_index = index - CONFIG_KB_SETTINGS_KEY_COUNT;
+#endif // CONFIG_KB_HANDLER_SPLITLINK_SLAVE
+
+    if (local_index >= layout->key_count) {
         return;
     }
 
     k_mutex_lock(&ykb_bl_mut, K_FOREVER);
-    pressed[index] = value;
+    pressed[local_index] = value;
     k_mutex_unlock(&ykb_bl_mut);
 }
 
 static void kb_handler_on_value_changed(uint16_t index, uint16_t value) {
-    if (!layout || index >= layout->key_count) {
+    uint16_t local_index = index;
+
+    if (!layout) {
+        return;
+    }
+
+#if CONFIG_KB_HANDLER_SPLITLINK_SLAVE
+    if (index < CONFIG_KB_SETTINGS_KEY_COUNT) {
+        return;
+    }
+    local_index = index - CONFIG_KB_SETTINGS_KEY_COUNT;
+#endif // CONFIG_KB_HANDLER_SPLITLINK_SLAVE
+
+    if (local_index >= layout->key_count) {
         return;
     }
 
     k_mutex_lock(&ykb_bl_mut, K_FOREVER);
-    press[index] = value;
+    press[local_index] = value;
     k_mutex_unlock(&ykb_bl_mut);
 }
 

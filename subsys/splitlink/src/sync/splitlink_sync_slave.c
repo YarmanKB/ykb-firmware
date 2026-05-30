@@ -140,6 +140,8 @@ static void on_new_value(uint16_t idx, uint16_t value) {
         return;
     }
 
+    kb_handler_core_handle_value(CONFIG_KB_SETTINGS_KEY_COUNT + idx, value);
+
     values[idx] = value;
     bool expected = false;
     if (atomic_compare_exchange_strong_explicit(&send_values_pending, &expected,
