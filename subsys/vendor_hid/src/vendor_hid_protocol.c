@@ -209,7 +209,13 @@ static void response_work_handler(struct k_work *work) {
         break;
     }
     case RESPONSE_SET_SETTINGS_OK: {
-        response_code = RESPONSE_SET_SETTINGS_OK;
+        const vendor_hid_proto_packet_t *request =
+            (const vendor_hid_proto_packet_t *)ctx->rx_buffer;
+        int err = vendor_hid_protocol_set_settings(
+            (const kb_settings_t *)request->data);
+
+        response_code =
+            (err == 0) ? RESPONSE_SET_SETTINGS_OK : RESPONSE_ERROR;
         data = &response_code;
         len = sizeof(response_code);
         break;
@@ -233,7 +239,13 @@ static void response_work_handler(struct k_work *work) {
         break;
     }
     case RESPONSE_SET_LUMISCRIPT_SLOT_OK: {
-        response_code = RESPONSE_SET_LUMISCRIPT_SLOT_OK;
+        const vendor_hid_proto_packet_t *request =
+            (const vendor_hid_proto_packet_t *)ctx->rx_buffer;
+        int err = vendor_hid_protocol_set_script_slot(
+            (const vendor_hid_proto_script_slot_packet_t *)request->data);
+
+        response_code =
+            (err == 0) ? RESPONSE_SET_LUMISCRIPT_SLOT_OK : RESPONSE_ERROR;
         data = &response_code;
         len = sizeof(response_code);
         break;
@@ -256,13 +268,27 @@ static void response_work_handler(struct k_work *work) {
         break;
     }
     case RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK: {
-        response_code = RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK;
+        const vendor_hid_proto_packet_t *request =
+            (const vendor_hid_proto_packet_t *)ctx->rx_buffer;
+        const vendor_hid_proto_script_slot_get_request_t *slot_request =
+            (const vendor_hid_proto_script_slot_get_request_t *)request->data;
+        int err = vendor_hid_protocol_clear_script_slot(slot_request->slot);
+
+        response_code =
+            (err == 0) ? RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK : RESPONSE_ERROR;
         data = &response_code;
         len = sizeof(response_code);
         break;
     }
     case RESPONSE_RENAME_LUMISCRIPT_SLOT_OK: {
-        response_code = RESPONSE_RENAME_LUMISCRIPT_SLOT_OK;
+        const vendor_hid_proto_packet_t *request =
+            (const vendor_hid_proto_packet_t *)ctx->rx_buffer;
+        int err = vendor_hid_protocol_rename_script_slot(
+            (const vendor_hid_proto_script_slot_rename_request_t *)
+                request->data);
+
+        response_code =
+            (err == 0) ? RESPONSE_RENAME_LUMISCRIPT_SLOT_OK : RESPONSE_ERROR;
         data = &response_code;
         len = sizeof(response_code);
         break;
@@ -397,10 +423,7 @@ int vendor_hid_protocol_parse(vendor_hid_protocol_ctx_t *ctx,
         break;
     }
     case REQUEST_SET_SETTINGS: {
-        int err = vendor_hid_protocol_set_settings(
-            (const kb_settings_t *)request->data);
-        ctx->current_response =
-            (err == 0) ? RESPONSE_SET_SETTINGS_OK : RESPONSE_ERROR;
+        ctx->current_response = RESPONSE_SET_SETTINGS_OK;
         break;
     }
 #if CONFIG_YKB_BACKLIGHT
@@ -409,10 +432,7 @@ int vendor_hid_protocol_parse(vendor_hid_protocol_ctx_t *ctx,
         break;
     }
     case REQUEST_SET_LUMISCRIPT_SLOT: {
-        int err = vendor_hid_protocol_set_script_slot(
-            (const vendor_hid_proto_script_slot_packet_t *)request->data);
-        ctx->current_response =
-            (err == 0) ? RESPONSE_SET_LUMISCRIPT_SLOT_OK : RESPONSE_ERROR;
+        ctx->current_response = RESPONSE_SET_LUMISCRIPT_SLOT_OK;
         break;
     }
     case REQUEST_GET_LUMISCRIPT_SLOT_INFO: {
@@ -420,19 +440,11 @@ int vendor_hid_protocol_parse(vendor_hid_protocol_ctx_t *ctx,
         break;
     }
     case REQUEST_CLEAR_LUMISCRIPT_SLOT: {
-        const vendor_hid_proto_script_slot_get_request_t *slot_request =
-            (const vendor_hid_proto_script_slot_get_request_t *)request->data;
-        int err = vendor_hid_protocol_clear_script_slot(slot_request->slot);
-        ctx->current_response =
-            (err == 0) ? RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK : RESPONSE_ERROR;
+        ctx->current_response = RESPONSE_CLEAR_LUMISCRIPT_SLOT_OK;
         break;
     }
     case REQUEST_RENAME_LUMISCRIPT_SLOT: {
-        int err = vendor_hid_protocol_rename_script_slot(
-            (const vendor_hid_proto_script_slot_rename_request_t *)
-                request->data);
-        ctx->current_response =
-            (err == 0) ? RESPONSE_RENAME_LUMISCRIPT_SLOT_OK : RESPONSE_ERROR;
+        ctx->current_response = RESPONSE_RENAME_LUMISCRIPT_SLOT_OK;
         break;
     }
 #endif // CONFIG_YKB_BACKLIGHT
