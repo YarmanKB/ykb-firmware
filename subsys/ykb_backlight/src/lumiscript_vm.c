@@ -2,6 +2,7 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/random/random.h>
 
 LOG_MODULE_DECLARE(ykb_backlight);
 
@@ -45,9 +46,17 @@ static int size_mul_overflow(size_t a, size_t b, size_t *out) {
     return 0;
 }
 
+static float vm_rand_impl(void *user_data) {
+    uint32_t r = sys_rand32_get();
+    r >>= 8;
+    return (float)r / 16777216.0f;
+}
+
 int lumiscript_load(const uint8_t *bytecode, size_t bytecode_size) {
     int err = 0;
     k_mutex_lock(&lumi_mut, K_FOREVER);
+
+    lumi_vm_set_random(&state, vm_rand_impl, NULL);
 
     if (!lumi_vm_measure_bytecode(bytecode, bytecode_size, &req, &error)) {
         LOG_ERR("lumi_vm_measure_bytecode: %s (%zu)", error.message,

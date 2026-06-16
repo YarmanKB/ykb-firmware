@@ -1,0 +1,22 @@
+type animation
+
+key var in_animation = 0
+key var age = 0
+
+render {
+    if in_animation {
+        age = age + dt * speed
+        if age > 1000 {
+            in_animation = 0
+        }
+        color hsv(264, 78, clamp(if age > 500 { 100 - age * 0.2 } else { age * 0.2 }, 0, 100))
+    } else {
+        if rand() < 0.05 {
+            in_animation = 1
+            age = 0
+            color hsv(264, 78, 0)
+        } else {
+            color rgb(0, 0, 0)
+        }
+    }
+}

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
+import subprocess
 from pathlib import Path
 
 ARRAY_SECTIONS = ("led_map", "x_coordinates", "y_coordinates")
@@ -89,16 +91,95 @@ def format_c_array(values, wrap=8, indent="    "):
     return "\n".join(lines) if lines else ""
 
 
+def run_command(args):
+    env = os.environ.copy()
+    env["CCACHE_DISABLE"] = "1"
+    subprocess.run([str(arg) for arg in args], check=True, env=env)
+
+
+def ensure_lumic(lumiscript_dir: Path, build_dir: Path) -> Path:
+    lumic = build_dir / "lumic"
+    build_file = build_dir / "build.ninja"
+
+    if not (lumiscript_dir / "meson.build").is_file():
+        raise ValueError(f"{lumiscript_dir}: lumiscript meson.build not found")
+
+    if not build_file.is_file():
+        build_dir.mkdir(parents=True, exist_ok=True)
+        run_command([
+            "meson",
+            "setup",
+            build_dir,
+            lumiscript_dir,
+            "--buildtype=release",
+        ])
+
+    run_command(["meson", "compile", "-C", build_dir, "lumic"])
+
+    if not lumic.is_file():
+        raise ValueError(f"{lumic}: lumic build did not produce expected binary")
+
+    return lumic
+
+
+def compile_lumiscript(lumic: Path, source: Path, output: Path,
+                       optimization: str):
+    output.parent.mkdir(parents=True, exist_ok=True)
+    run_command([lumic, optimization, source, "-o", output])
+
+
+def resolve_resource_files(files, lumiscript_dir, lumiscript_build_dir,
+                           compiled_dir, optimization):
+    resolved = []
+    lumic = None
+
+    for file_path in files:
+        suffix = file_path.suffix.lower()
+        if suffix == ".lbc":
+            resolved.append((file_path.stem, file_path))
+            continue
+
+        if suffix != ".lumi":
+            raise ValueError(
+                f"{file_path}: expected .lumi source or .lbc bytecode")
+
+        if (lumiscript_dir is None or lumiscript_build_dir is None or
+                compiled_dir is None):
+            raise ValueError(
+                f"{file_path}: .lumi inputs require --lumiscript-dir, "
+                "--lumiscript-build-dir and --compiled-dir")
+
+        if lumic is None:
+            lumic = ensure_lumic(lumiscript_dir, lumiscript_build_dir)
+
+        compiled_path = compiled_dir / f"{file_path.stem}.lbc"
+        compile_lumiscript(lumic, file_path, compiled_path, optimization)
+        resolved.append((file_path.stem, compiled_path))
+
+    return resolved
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out-c", required=True)
     parser.add_argument("--out-h", required=True)
     parser.add_argument("--layout", required=True)
     parser.add_argument("--symbol", default="default_backlight_settings")
-    parser.add_argument("bins", nargs="+")
+    parser.add_argument("--lumiscript-dir")
+    parser.add_argument("--lumiscript-build-dir")
+    parser.add_argument("--compiled-dir")
+    parser.add_argument("--lumic-optimization", default="-O3")
+    parser.add_argument("resources", nargs="+")
     args = parser.parse_args()
 
-    files = [Path(p) for p in args.bins]
+    input_files = [Path(p) for p in args.resources]
+    files = resolve_resource_files(
+        input_files,
+        Path(args.lumiscript_dir) if args.lumiscript_dir else None,
+        Path(args.lumiscript_build_dir) if args.lumiscript_build_dir else None,
+        Path(args.compiled_dir) if args.compiled_dir else None,
+        args.lumic_optimization,
+    )
     layout_path = Path(args.layout)
     layout_sections = parse_layout(layout_path)
     led_map = parse_u16_array(flatten_split_rows(layout_sections["led_map"]), layout_path,
@@ -120,18 +201,6 @@ def main():
             f"{layout_path}: y_coordinates has {len(y_coordinates)} entries, "
             f"expected {key_count}")
 
-    names = []
-    offsets = [0]
-    blob = bytearray()
-
-    for f in files:
-        data = f.read_bytes()
-
-        names.append(f.stem)
-
-        blob.extend(data)
-        offsets.append(len(blob))
-
     out_c = Path(args.out_c)
     out_h = Path(args.out_h)
 
@@ -147,7 +216,7 @@ extern const ykb_backlight_script_slots_t {args.symbol};
 """)
 
     slot_entries = []
-    for index, (name, file_path) in enumerate(zip(names, files)):
+    for index, (name, file_path) in enumerate(files):
         data = file_path.read_bytes()
         bytecode_init = format_c_array([str(b) for b in data],
                                        wrap=16,
@@ -191,7 +260,7 @@ static const uint16_t generated_backlight_y_coordinates[] = {{
 
 BUILD_ASSERT(GENERATED_BACKLIGHT_LAYOUT_KEY_COUNT == TOTAL_KEY_COUNT,
              "generated backlight layout should match TOTAL_KEY_COUNT");
-BUILD_ASSERT({len(names)} <= CONFIG_YKB_BL_SCRIPT_SLOT_COUNT,
+BUILD_ASSERT({len(files)} <= CONFIG_YKB_BL_SCRIPT_SLOT_COUNT,
              "default backlight scripts exceed configured slot count");
 
 static const ykb_backlight_layout_t generated_backlight_layout = {{
