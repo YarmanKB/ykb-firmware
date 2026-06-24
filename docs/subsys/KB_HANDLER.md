@@ -16,9 +16,9 @@ The implementation is usually selected by board defconfig.
 
 ## Input path
 
-KScan reports raw ADC values through `KSCAN_CB_DEFINE`.
+KBHandler owns the scan loop. Its thread calls `kscan_scan()` for each configured KScan device, then processes the completed local scan frame.
 
-KBHandler stores latest values and processes them on its own thread through a message queue. This keeps expensive report building out of KScan polling threads.
+The message queue is used for settings sync and split slave updates, not for every raw local ADC sample.
 
 Raw values are interpreted using:
 
@@ -80,7 +80,7 @@ On split slave, local scans are sent through SplitLink. Local subsystems that us
 
 ## Important Kconfig
 
-- `CONFIG_KB_HANDLER_MSGQ_SIZE` - queue depth for scan/value/settings events.
+- `CONFIG_KB_HANDLER_MSGQ_SIZE` - queue depth for settings and split events.
 - `CONFIG_KB_HANDLER_THREAD_STACK_SIZE` - stack for report building and settings sync.
 - `CONFIG_KB_HANDLER_THREAD_PRIORITY` - should be lower priority number than slow background subsystems.
 - `CONFIG_KB_HANDLER_REPORT_ROLLOVER` - whether to emit rollover error reports.

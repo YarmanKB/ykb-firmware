@@ -18,6 +18,8 @@ int splitlink_sync_master_attach_kb_handler(void);
 
 int splitlink_sync_slave_attach_kb_handler(void);
 
+void splitlink_sync_slave_update_values(const uint16_t *values, uint16_t count);
+
 // Battery notifications, connect/disconnect on the other hand might be used
 // in different subsystems
 #define SPLITLINK_SYNC_CB(name)                                                \

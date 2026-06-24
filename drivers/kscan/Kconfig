@@ -9,7 +9,5 @@ if KSCAN
     source "subsys/logging/Kconfig.template.log_config"
 
     rsource "Kconfig.muxes"
-    rsource "Kconfig.enables"
-    rsource "Kconfig.channels"
 
 endif # KSCAN

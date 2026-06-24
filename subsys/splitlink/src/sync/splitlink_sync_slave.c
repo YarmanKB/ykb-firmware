@@ -5,9 +5,8 @@
 #include <subsys/kb_handler_core.h>
 #include <subsys/ykb_battsense.h>
 
-#include <drivers/kscan.h>
-
 #include <stdatomic.h>
+#include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
@@ -134,23 +133,19 @@ int splitlink_sync_slave_attach_kb_handler(void) {
     return kb_handler_core_init();
 }
 
-static void on_new_value(uint16_t idx, uint16_t value) {
-    if (idx >= CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE) {
-        LOG_WRN("Ignoring out-of-range slave key value idx %u", idx);
+void splitlink_sync_slave_update_values(const uint16_t *new_values,
+                                        uint16_t count) {
+    bool expected = false;
+
+    if (!new_values || count != CONFIG_KB_SETTINGS_KEY_COUNT_SLAVE) {
+        LOG_WRN("Ignoring invalid slave values update");
         return;
     }
 
-    kb_handler_core_handle_value(CONFIG_KB_SETTINGS_KEY_COUNT + idx, value);
-
-    values[idx] = value;
-    bool expected = false;
+    memcpy(values, new_values, count * sizeof(uint16_t));
     if (atomic_compare_exchange_strong_explicit(&send_values_pending, &expected,
                                                 true, memory_order_relaxed,
                                                 memory_order_relaxed)) {
         k_work_schedule(&send_values_work, K_MSEC(0));
     }
 }
-
-KSCAN_CB_DEFINE(splitlink_sync_slave) = {
-    .on_new_value = on_new_value,
-};

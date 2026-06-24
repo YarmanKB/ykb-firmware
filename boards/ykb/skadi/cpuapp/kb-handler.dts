@@ -49,7 +49,7 @@
 		io-channels = <&adc 0>, <&adc 1>, <&adc 2>, <&adc 3>; // P0.04, P0.05, P0.06, P0.07
 		muxes = <&mux1>, <&mux2>, <&mux3>, <&mux4>;
 
-		settle-us = <1>;
+		settle-us = <0>;
 
 		#kscan-cells = <0>;
 	};
