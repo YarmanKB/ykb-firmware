@@ -12,9 +12,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define KEY_COUNT Z_USER_PROP(kb_handler_key_count)
-#define KEY_COUNT_SLAVE Z_USER_PROP_OR(kb_handler_key_count_slave, 0)
-
 size_t kb_handler_kscan_count(void);
 const struct device *kb_handler_get_kscan(size_t idx);
 

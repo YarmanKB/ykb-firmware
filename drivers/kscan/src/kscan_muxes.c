@@ -44,19 +44,141 @@ static int kscan_muxes_get_idx_offset(const struct device *dev) {
     return cfg->idx_offset;
 }
 
+static void kscan_muxes_prepare_sequence(struct kscan_muxes_data *data,
+                                         const struct adc_dt_spec *adc_spec,
+                                         uint16_t *buffer, size_t buffer_size) {
+    data->adc_seq.buffer = buffer;
+    data->adc_seq.buffer_size = buffer_size;
+    data->adc_seq.resolution = adc_spec->resolution;
+    data->adc_seq.options = &data->adc_seq_opts;
+    data->adc_seq.oversampling = adc_spec->oversampling;
+    data->adc_seq.calibrate = false;
+    data->adc_seq.channels = BIT(adc_spec->channel_id);
+}
+
+#if CONFIG_KSCAN_MUXES_PARALLEL_ADC_READS
+static int kscan_muxes_parallel_scan(const struct device *dev, uint16_t *values,
+                                     const int *channel_amount,
+                                     const uint16_t *mux_offsets,
+                                     int max_channel_amount) {
+    const struct kscan_muxes_config *cfg = dev->config;
+    struct kscan_muxes_data *data = dev->data;
+    uint16_t samples = 0U;
+    uint32_t start_cycles = k_cycle_get_32();
+    int ret = 0;
+
+    for (size_t i = 0; i < max_channel_amount; ++i) {
+        for (size_t j = 0; j < cfg->muxes_count; ++j) {
+            const struct device *mux = cfg->muxes[j];
+
+            if (i >= channel_amount[j]) {
+                continue;
+            }
+
+            ret = mux_select(mux, i);
+            if (ret) {
+                LOG_ERR("mux_select: %d", ret);
+                return ret;
+            }
+        }
+
+        if (cfg->settle_us > 0U) {
+            k_busy_wait(cfg->settle_us);
+        }
+
+        ret = adc_read(cfg->channels[0].dev, &data->adc_seq);
+        if (ret) {
+            LOG_ERR("ADC read: %d", ret);
+            YKB_METRICS_KSCAN_READ_ERROR(dev, 0U);
+            return ret;
+        }
+
+        for (size_t j = 0; j < cfg->muxes_count; ++j) {
+            uint16_t key_idx;
+            uint16_t value;
+
+            if (i >= channel_amount[j]) {
+                continue;
+            }
+
+            key_idx = mux_offsets[j] + (uint16_t)i;
+            value = data->read_buf[j];
+            values[key_idx] = value;
+            YKB_METRICS_KSCAN_SAMPLE(dev, 0U, cfg->idx_offset + key_idx, value,
+                                     data->adc_seq.resolution);
+            samples++;
+        }
+    }
+
+    YKB_METRICS_KSCAN_SCAN_DONE(dev, 0U, samples,
+                                k_cycle_get_32() - start_cycles);
+
+    return 0;
+}
+#else
+static int kscan_muxes_stable_scan(const struct device *dev, uint16_t *values,
+                                   const int *channel_amount,
+                                   const uint16_t *mux_offsets) {
+    const struct kscan_muxes_config *cfg = dev->config;
+    struct kscan_muxes_data *data = dev->data;
+
+    for (size_t mux_idx = 0; mux_idx < cfg->muxes_count; ++mux_idx) {
+        const struct device *mux = cfg->muxes[mux_idx];
+        const struct adc_dt_spec *adc_spec = &cfg->channels[mux_idx];
+        uint32_t start_cycles = k_cycle_get_32();
+        uint16_t samples = 0U;
+
+        for (size_t i = 0; i < channel_amount[mux_idx]; ++i) {
+            uint16_t key_idx;
+            uint16_t value;
+            int ret;
+
+            ret = mux_select(mux, i);
+            if (ret) {
+                LOG_ERR("mux_select: %d", ret);
+                return ret;
+            }
+
+            if (cfg->settle_us > 0U) {
+                k_busy_wait(cfg->settle_us);
+            }
+
+            kscan_muxes_prepare_sequence(data, adc_spec,
+                                         &data->read_buf[mux_idx],
+                                         sizeof(data->read_buf[mux_idx]));
+            ret = adc_read(adc_spec->dev, &data->adc_seq);
+            if (ret) {
+                LOG_ERR("ADC read: %d", ret);
+                YKB_METRICS_KSCAN_READ_ERROR(dev, mux_idx);
+                return ret;
+            }
+
+            key_idx = mux_offsets[mux_idx] + (uint16_t)i;
+            value = data->read_buf[mux_idx];
+            values[key_idx] = value;
+            YKB_METRICS_KSCAN_SAMPLE(dev, mux_idx, cfg->idx_offset + key_idx,
+                                     value, adc_spec->resolution);
+            samples++;
+        }
+
+        YKB_METRICS_KSCAN_SCAN_DONE(dev, mux_idx, samples,
+                                    k_cycle_get_32() - start_cycles);
+    }
+
+    return 0;
+}
+#endif
+
 static int kscan_muxes_scan(const struct device *dev, uint16_t *values) {
     if (!values) {
         return -EINVAL;
     }
     const struct kscan_muxes_config *cfg = dev->config;
-    struct kscan_muxes_data *data = dev->data;
 
     int channel_amount[cfg->muxes_count];
     uint16_t mux_offsets[cfg->muxes_count];
     int max_channel_amount = 0;
-    uint16_t samples = 0;
     uint16_t next_offset = 0;
-    uint32_t start_cycles = k_cycle_get_32();
     int ret = 0;
 
     for (size_t i = 0; i < cfg->muxes_count; ++i) {
@@ -80,53 +202,15 @@ static int kscan_muxes_scan(const struct device *dev, uint16_t *values) {
 #endif // CONFIG_KSCAN_MUXES_MUX_TOGGLE
     }
 
-    for (size_t i = 0; i < max_channel_amount; ++i) {
-        for (size_t j = 0; j < cfg->muxes_count; ++j) {
-            if (i >= channel_amount[j]) {
-                continue;
-            }
+#if CONFIG_KSCAN_MUXES_PARALLEL_ADC_READS
+    ret = kscan_muxes_parallel_scan(dev, values, channel_amount, mux_offsets,
+                                    max_channel_amount);
+#else
+    ret = kscan_muxes_stable_scan(dev, values, channel_amount, mux_offsets);
+#endif
 
-            const struct device *mux = cfg->muxes[j];
-            ret = mux_select(mux, i);
-            if (ret) {
-                LOG_ERR("mux_select: %d", ret);
-                goto cleanup;
-            }
-        }
-
-        if (cfg->settle_us > 0U) {
-            k_busy_wait(cfg->settle_us);
-        }
-
-        ret = adc_read(cfg->channels[0].dev, &data->adc_seq);
-        if (ret) {
-            LOG_ERR("ADC read: %d", ret);
-            YKB_METRICS_KSCAN_READ_ERROR(dev, 0U);
-            goto cleanup;
-        }
-
-        for (size_t j = 0; j < cfg->muxes_count; ++j) {
-            uint16_t key_idx;
-            uint16_t value;
-
-            if (i >= channel_amount[j]) {
-                continue;
-            }
-
-            key_idx = mux_offsets[j] + (uint16_t)i;
-            value = data->read_buf[j];
-            values[key_idx] = value;
-            YKB_METRICS_KSCAN_SAMPLE(dev, 0U, cfg->idx_offset + key_idx, value,
-                                     data->adc_seq.resolution);
-            samples++;
-        }
-    }
-
-    YKB_METRICS_KSCAN_SCAN_DONE(dev, 0U, samples,
-                                k_cycle_get_32() - start_cycles);
-
-cleanup:
 #if CONFIG_KSCAN_MUXES_MUX_TOGGLE
+cleanup:
     for (size_t i = 0; i < cfg->muxes_count; ++i) {
         const struct device *mux = cfg->muxes[i];
         int err = mux_disable(mux);
@@ -148,6 +232,8 @@ DEVICE_API(kscan, kscan_muxes_api) = {
 static int kscan_muxes_init(const struct device *dev) {
     const struct kscan_muxes_config *cfg = dev->config;
     struct kscan_muxes_data *data = dev->data;
+
+    ARG_UNUSED(data);
 
     int total_amount = 0;
 
@@ -181,16 +267,9 @@ static int kscan_muxes_init(const struct device *dev) {
     data->adc_seq_opts.callback = NULL;
     data->adc_seq_opts.extra_samplings = 0;
 
-    data->adc_seq.buffer = data->read_buf;
-    data->adc_seq.buffer_size = sizeof(uint16_t) * cfg->channels_count;
-    data->adc_seq.resolution = cfg->channels[0].resolution;
-    data->adc_seq.options = &data->adc_seq_opts;
-    data->adc_seq.oversampling = cfg->channels[0].oversampling;
-    data->adc_seq.calibrate = false;
-    data->adc_seq.channels = 0;
-
     for (uint16_t i = 0; i < cfg->channels_count; ++i) {
         const struct adc_dt_spec *adc_spec = &cfg->channels[i];
+#if CONFIG_KSCAN_MUXES_PARALLEL_ADC_READS
         if (adc_spec->dev != cfg->channels[0].dev ||
             adc_spec->resolution != cfg->channels[0].resolution ||
             adc_spec->oversampling != cfg->channels[0].oversampling) {
@@ -203,6 +282,7 @@ static int kscan_muxes_init(const struct device *dev) {
             LOG_ERR("ADC channels must be listed in ascending channel order");
             return -ENODEV;
         }
+#endif
         if (!adc_is_ready_dt(adc_spec)) {
             LOG_ERR("ADC device '%s' is not ready", adc_spec->dev->name);
             return -ENODEV;
@@ -214,13 +294,21 @@ static int kscan_muxes_init(const struct device *dev) {
             return -ENODEV;
         }
         LOG_DBG("Successfully set up ADC channel %d", adc_spec->channel_id);
-        data->adc_seq.channels |= BIT(adc_spec->channel_id);
+    }
+
+#if CONFIG_KSCAN_MUXES_PARALLEL_ADC_READS
+    kscan_muxes_prepare_sequence(data, &cfg->channels[0], data->read_buf,
+                                 sizeof(uint16_t) * cfg->channels_count);
+    data->adc_seq.channels = 0;
+    for (uint16_t i = 0; i < cfg->channels_count; ++i) {
+        data->adc_seq.channels |= BIT(cfg->channels[i].channel_id);
     }
 
     if (cfg->channels_count > 1U && data->adc_seq.oversampling > 0U) {
         LOG_WRN("Disabling ADC oversampling for multi-channel kscan scan");
         data->adc_seq.oversampling = 0U;
     }
+#endif
 
     LOG_INF("KScan (MUXes) ready: %u MUXes", cfg->muxes_count);
 
@@ -254,10 +342,10 @@ static int kscan_muxes_init(const struct device *dev) {
                  "settle-time must be greater than 0");
 
 #define KSCAN_MUXES_DEFINE(inst)                                               \
-    BUILD_ASSERT(DT_INST_PROP_LEN(inst, io_channels) > 0,                     \
-                 "io-channels must not be empty");                            \
-    BUILD_ASSERT(DT_INST_PROP_LEN(inst, muxes) > 0,                           \
-                 "muxes must not be empty");                                  \
+    BUILD_ASSERT(DT_INST_PROP_LEN(inst, io_channels) > 0,                      \
+                 "io-channels must not be empty");                             \
+    BUILD_ASSERT(DT_INST_PROP_LEN(inst, muxes) > 0,                            \
+                 "muxes must not be empty");                                   \
     BUILD_ASSERT(DT_INST_PROP_LEN(inst, io_channels) ==                        \
                      DT_INST_PROP_LEN(inst, muxes),                            \
                  "io-channels and muxes must have same length");               \

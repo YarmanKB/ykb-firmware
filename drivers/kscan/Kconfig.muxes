@@ -10,4 +10,13 @@ if KSCAN_MUXES
         bool "Enable/disable multiplexers on each scan"
         default n
 
+    config KSCAN_MUXES_PARALLEL_ADC_READS
+        bool "Read all mux ADC channels in one ADC sequence"
+        default y
+        help
+          Read the active channel from every mux with one multi-channel ADC
+          sequence. This is faster, but on nRF SAADC hardware oversampling is
+          only supported for single-channel sequences, so this mode disables
+          sequence oversampling when multiple ADC channels are used.
+
 endif # KSCAN_MUXES
